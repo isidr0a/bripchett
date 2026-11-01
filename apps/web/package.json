@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
+    "dev": "vite --host localhost",
     "check": "vue-tsc --noEmit",
     "build": "vue-tsc --noEmit && vite build",
     "deploy": "wrangler pages deploy dist --project-name briochett-app --branch main"

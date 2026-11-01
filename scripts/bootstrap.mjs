@@ -1,7 +1,7 @@
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 const production = process.argv.includes('--production');
-const origin = production ? 'https://api.briochettvzla.com' : 'http://127.0.0.1:8787';
+const origin = production ? 'https://api.briochettvzla.com' : 'http://localhost:8787';
 const local = production ? '' : await readFile('apps/api/.dev.vars', 'utf8');
 const token = production
   ? process.env.BOOTSTRAP_TOKEN
@@ -31,7 +31,7 @@ await writeFile(
   '.credentials/' + (production ? 'produccion' : 'administrador-local') + '.json',
   JSON.stringify(
     {
-      url: production ? 'https://app.briochettvzla.com' : 'http://127.0.0.1:5173',
+      url: production ? 'https://app.briochettvzla.com' : 'http://localhost:5173',
       ...account,
       mustChangePassword: true,
     },

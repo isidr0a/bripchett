@@ -26,7 +26,7 @@ npm run db:migrate
 npm run dev
 ```
 
-Frontend: <http://127.0.0.1:5173>. API: <http://127.0.0.1:8787>. Usar estas direcciones exactas para que coincidan el origen y las cookies.
+Frontend: <http://localhost:5173>. API: <http://localhost:8787>. Usar estas direcciones exactas para que coincidan el origen y las cookies.
 
 Con la API encendida, elegir una inicialización:
 

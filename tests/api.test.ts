@@ -20,7 +20,7 @@ async function request(
   extra: Record<string, string> = {},
 ) {
   const r = await app.request(
-    'http://127.0.0.1:8787' + path,
+    'http://localhost:8787' + path,
     {
       method,
       headers: {
@@ -90,8 +90,8 @@ beforeAll(async () => {
   db = (await mf.getD1Database('DB')) as unknown as D1Database;
   env = {
     DB: db,
-    API_ORIGIN: 'http://127.0.0.1:8787',
-    FRONTEND_ORIGIN: 'http://127.0.0.1:5173',
+    API_ORIGIN: 'http://localhost:8787',
+    FRONTEND_ORIGIN: 'http://localhost:5173',
     BETTER_AUTH_SECRET: 'test-only-secret-not-for-production-2026-000000',
     BOOTSTRAP_TOKEN: 'test-only-bootstrap',
     ENVIRONMENT: 'test',

@@ -1,5 +1,5 @@
-API_ORIGIN=http://127.0.0.1:8787
-FRONTEND_ORIGIN=http://127.0.0.1:5173
+API_ORIGIN=http://localhost:8787
+FRONTEND_ORIGIN=http://localhost:5173
 ENVIRONMENT=development
 # Set a different, random value locally and in Cloudflare secrets.
 BETTER_AUTH_SECRET=

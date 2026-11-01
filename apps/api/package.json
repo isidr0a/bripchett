@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --ip 127.0.0.1 --port 8787",
+    "dev": "wrangler dev --ip localhost --port 8787",
     "check": "tsc -p tsconfig.json",
     "db:migrate": "wrangler d1 migrations apply DB --local",
     "deploy": "wrangler deploy"

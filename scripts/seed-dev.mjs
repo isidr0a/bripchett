@@ -1,7 +1,7 @@
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
-const origin = 'http://127.0.0.1:8787',
-  front = 'http://127.0.0.1:5173';
+const origin = 'http://localhost:8787',
+  front = 'http://localhost:5173';
 const config = await readFile('apps/api/.dev.vars', 'utf8');
 if (!/^ENVIRONMENT=development$/m.test(config))
   throw new Error('Solo se permiten datos de prueba en desarrollo.');
