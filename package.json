@@ -16,15 +16,30 @@
     "bootstrap": "node scripts/bootstrap.mjs",
     "deploy:api": "npm run check -w @briochett/api && npm run deploy -w @briochett/api",
     "deploy:web": "npm run build && npm run deploy -w @briochett/web",
-    "setup:dev": "node scripts/setup-dev.mjs"
+    "setup:dev": "node scripts/setup-dev.mjs",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix --max-warnings 0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "validate": "npm run lint && npm run format:check && npm run check && npm test && npm run build"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "latest",
+    "@eslint/js": "^10.0.1",
     "@types/node": "latest",
     "concurrently": "latest",
+    "eslint": "^10.14.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-vue": "^10.12.0",
+    "globals": "^17.14.0",
     "miniflare": "^5.20261023.3-beta",
+    "prettier": "^3.9.10",
     "typescript": "latest",
+    "typescript-eslint": "^8.72.1",
     "vitest": "latest",
     "wrangler": "latest"
+  },
+  "overrides": {
+    "minimatch": "^11.0.1"
   }
 }

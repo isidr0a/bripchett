@@ -1,12 +1,23 @@
 {
-  "$schema":"../../node_modules/wrangler/config-schema.json",
-  "name":"briochett-api",
-  "main":"src/index.ts",
-  "compatibility_date":"2026-10-30",
-  "compatibility_flags":["nodejs_compat"],
-  "account_id":"947f5fff94c01b997b79fc0fe9b45b25",
-  "vars":{"API_ORIGIN":"https://api.briochettvzla.com","FRONTEND_ORIGIN":"https://app.briochettvzla.com","ENVIRONMENT":"production"},
-  "d1_databases":[{"binding":"DB","database_name":"briochett-sistema","database_id":"2e081d89-f6df-4b8e-85d3-19514c0c7a71","migrations_dir":"migrations"}],
-  "routes":[{"pattern":"api.briochettvzla.com","custom_domain":true}],
-  "observability":{"enabled":true}
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "briochett-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-30",
+  "compatibility_flags": ["nodejs_compat"],
+  "account_id": "947f5fff94c01b997b79fc0fe9b45b25",
+  "vars": {
+    "API_ORIGIN": "https://api.briochettvzla.com",
+    "FRONTEND_ORIGIN": "https://app.briochettvzla.com",
+    "ENVIRONMENT": "production",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "briochett-sistema",
+      "database_id": "2e081d89-f6df-4b8e-85d3-19514c0c7a71",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "routes": [{ "pattern": "api.briochettvzla.com", "custom_domain": true }],
+  "observability": { "enabled": true },
 }
