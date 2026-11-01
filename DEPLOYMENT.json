@@ -1,23 +1,25 @@
 {
-  "verifiedAt": "2026-11-01T02:11:21.141Z",
+  "verifiedAt": "2026-11-01T21:15:50.151Z",
   "timezone": "America/Caracas",
+  "sourceCommit": "9a7cdaeec7ffdeb87371817c89431fa501bb8e5c",
   "frontend": {
     "platform": "Cloudflare Pages",
     "project": "briochett-app",
     "branch": "main",
     "url": "https://app.briochettvzla.com",
-    "deploymentId": "2a6f9f08-f81f-4c35-94cc-67af49468760",
-    "deploymentUrl": "https://2a6f9f08.briochett-app.pages.dev",
-    "customDomainStatus": "active",
-    "dns": "CNAME app -> briochett-app.pages.dev, proxied",
+    "deploymentId": "cc50fe73-b4b8-4065-8fbc-ece34712d447",
+    "deploymentUrl": "https://cc50fe73.briochett-app.pages.dev",
     "httpsVerified": true,
-    "directSpaRouteStatus": 200
+    "directSpaRouteStatus": 200,
+    "productionBundleMatches": true,
+    "entryAsset": "/assets/index-BLG4RfyR.js",
+    "recurrenceUiPresent": true
   },
   "backend": {
     "platform": "Cloudflare Workers",
     "worker": "briochett-api",
     "url": "https://api.briochettvzla.com",
-    "versionId": "6d742697-2636-4908-9e9c-5bc990dad5c9",
+    "versionId": "991f627d-ab8e-453b-bc26-f114a0875815",
     "healthStatus": 200,
     "openapiUrl": "https://api.briochettvzla.com/api/v1/openapi.json",
     "bootstrapSecretRemoved": true
@@ -26,38 +28,39 @@
     "platform": "Cloudflare D1",
     "name": "briochett-sistema",
     "id": "2e081d89-f6df-4b8e-85d3-19514c0c7a71",
-    "migrationsApplied": ["0001_initial.sql", "0002_concurrency_guards.sql"],
-    "initialCounts": {
+    "migrationsApplied": [
+      "0001_initial.sql",
+      "0002_concurrency_guards.sql",
+      "0003_recurring_routes.sql",
+      "0004_route_series_guard.sql"
+    ],
+    "recoveryPointRecorded": true,
+    "countsPreserved": true,
+    "verifiedCounts": {
       "users": 1,
       "clients": 0,
       "products": 0,
       "orders": 0,
-      "rates": 0
+      "routes": 0,
+      "visits": 0
     }
   },
   "verification": {
-    "automatedTestsPassed": 31,
+    "automatedTestsPassed": 53,
+    "ciUrl": "https://github.com/isidr0a/bripchett/actions/runs/41338068815",
     "typeChecksPassed": true,
+    "lintersPassed": true,
     "productionBuildPassed": true,
-    "productionApiOriginInBundle": true,
-    "loginStatus": 200,
-    "sessionStatus": 200,
-    "logoutStatus": 200,
-    "cookieAttributes": ["HttpOnly", "Secure", "SameSite=Lax", "host-only"],
+    "authenticatedBrowserSessionVerified": true,
+    "authenticatedDashboardLoaded": true,
+    "recurrenceControlsVerified": true,
     "credentialedCorsOrigin": "https://app.briochettvzla.com",
     "preflightStatus": 204,
     "foreignWriteStatus": 403,
     "anonymousClientStatus": 401,
-    "initialPasswordChangeRequired": true,
     "bootstrapDisabledStatus": 404,
-    "marketingSiteStatus": 200,
-    "responsiveReview": "1440px y 390px en navegador",
-    "localDnsNote": "El DNS público de Cloudflare resuelve y Pages confirma dominio activo. El resolver de este equipo conservaba una respuesta negativa anterior; su caché puede tardar en expirar. HTTPS y recarga directa de /clientes se verificaron con la IP pública obtenida por DNS, conservando la validación del certificado y el hostname original."
-  },
-  "initialAccess": {
-    "username": "administrador",
-    "credentialsFile": ".credentials/produccion.json",
-    "mustChangePassword": true
+    "browserConsoleErrors": 0,
+    "marketingSiteStatus": 200
   },
   "a2": {
     "enabled": false,
