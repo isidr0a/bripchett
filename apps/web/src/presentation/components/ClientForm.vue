@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { type Client } from '@briochett/contracts';
+import VisitAvailability from './VisitAvailability.vue';
 import { useClientForm } from '../../application/composables/useClientForm';
 const props = defineProps<{ client?: Client; completion?: boolean }>();
 const emit = defineEmits<{ saved: [client: Client]; cancel: []; busy: [value: boolean] }>();
@@ -14,7 +15,6 @@ const {
   candidate,
   sellers,
   storageError,
-  days,
   locate,
   confirmGPS,
   save,
@@ -122,37 +122,11 @@ const {
           >Inicio de recurrencia<input v-model="form.recurrenceStart" type="date" required
         /></label>
       </div>
-      <fieldset>
-        <legend>Días y horarios de visita</legend>
-        <p class="muted small">
-          Quincenal: semanas alternas desde la fecha de inicio. Mensual: la misma semana del mes que
-          la fecha de inicio.
-        </p>
-        <div v-for="(slot, i) in form.slots" :key="i" class="slot-row">
-          <label
-            >Día<select v-model="slot.day">
-              <option v-for="(day, n) in days" :key="n" :value="n">{{ day }}</option>
-            </select></label
-          ><label>Desde<input v-model="slot.start" type="time" required /></label
-          ><label>Hasta<input v-model="slot.end" type="time" required /></label
-          ><button
-            class="secondary"
-            type="button"
-            aria-label="Quitar horario"
-            @click="form.slots.splice(i, 1)"
-          >
-            ×
-          </button>
-        </div>
-        <button
-          type="button"
-          class="secondary"
-          :disabled="form.slots.length >= 21"
-          @click="form.slots.push({ day: 1, start: '08:00', end: '12:00' })"
-        >
-          Agregar horario
-        </button>
-      </fieldset>
+      <VisitAvailability v-model="form.slots" />
+      <p class="muted small">
+        Quincenal: semanas alternas desde la fecha de inicio. Mensual: la misma semana del mes que
+        la fecha de inicio.
+      </p>
       <label class="check"
         ><input v-model="form.active" type="checkbox" /> Cliente activo</label
       ></template

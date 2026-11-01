@@ -1,11 +1,18 @@
 import type { NamedUser } from '@briochett/contracts';
 import { reactive, ref, watch, onMounted } from 'vue';
-import { clientMissing, type Client, type ClientInput, type GeoPoint } from '@briochett/contracts';
+import {
+  clientSchema,
+  clientMissing,
+  type Client,
+  type ClientInput,
+  type GeoPoint,
+} from '@briochett/contracts';
 import { useAuth } from '../stores/auth';
 import { api } from '../../infrastructure/http/api-client';
 import { errorMessage, today } from '../../shared/formatters';
 import { readDraft, writeDraft, removeDraft } from '../../infrastructure/storage/draft-storage';
 import { captureLocation } from '../../infrastructure/geolocation/browser-location';
+import { anyTimeSlot, visitDays } from './useVisitAvailability';
 export function useClientForm(
   props: Readonly<{ client?: Client; completion?: boolean }>,
   emit: {
@@ -46,7 +53,7 @@ export function useClientForm(
         sellerId: null,
         active: true,
         geo: null,
-        slots: [],
+        slots: visitDays.map(({ day }) => anyTimeSlot(day)),
         recurrence: 'semanal',
         recurrenceStart: today(),
       };
@@ -58,8 +65,7 @@ export function useClientForm(
     gpsError = ref(''),
     candidate = ref<Omit<GeoPoint, 'confirmed'> | null>(null),
     sellers = ref<{ id: string; name: string }[]>([]),
-    storageError = ref(false),
-    days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    storageError = ref(false);
   watch(
     form,
     () => {
@@ -95,6 +101,13 @@ export function useClientForm(
   }
   async function save() {
     error.value = '';
+    if (!props.completion) {
+      const validation = clientSchema.safeParse(form);
+      if (!validation.success) {
+        error.value = validation.error.issues.map((issue) => issue.message).join(' ');
+        return;
+      }
+    }
     if (props.completion && clientMissing(form).length) {
       error.value = 'Completa los datos obligatorios y confirma la ubicación del negocio.';
       return;
@@ -141,7 +154,6 @@ export function useClientForm(
     candidate,
     sellers,
     storageError,
-    days,
     locate,
     confirmGPS,
     save,

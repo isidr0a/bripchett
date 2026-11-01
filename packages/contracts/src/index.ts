@@ -42,10 +42,15 @@ export type GeoPoint = z.infer<typeof geoSchema>;
 export const slotSchema = z
   .object({
     day: z.number().int().min(0).max(6),
+    allDay: z
+      .boolean()
+      .optional()
+      .describe('Permite visitas a cualquier hora del día seleccionado.'),
     start: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
     end: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
   })
   .refine((v) => v.start < v.end, 'El horario de cierre debe ser posterior al de inicio.');
+export type VisitSlot = z.infer<typeof slotSchema>;
 export const clientSchema = z.object({
   name: z.string().trim().min(2).max(150),
   rif: z.string().trim().max(30).default(''),

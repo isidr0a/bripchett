@@ -487,6 +487,22 @@ describe('Precios, pedidos y preparación', () => {
   });
 });
 describe('Rutas, visitas, reportes e integración', () => {
+  it('guarda cualquier horario y permite visitas al final del día seleccionado', async () => {
+    const created = await request('/api/v1/clients', 'administracion', 'POST', {
+      ...baseClient('Disponibilidad de día completo', users.vendedor.id),
+      slots: [{ day: 1, allDay: true, start: '00:00', end: '23:59' }],
+    });
+    expect(created.status).toBe(201);
+    const saved = await request('/api/v1/clients/' + created.body.id, 'vendedor');
+    expect(saved.body.slots[0].allDay).toBe(true);
+    const schedule = (at: string) =>
+      request('/api/v1/visits', 'vendedor', 'POST', {
+        clientId: created.body.id,
+        scheduledAt: at,
+      });
+    expect((await schedule('2026-11-03T03:59:00Z')).status).toBe(201);
+    expect((await schedule('2026-11-03T04:00:00Z')).status).toBe(422);
+  });
   it('respeta horarios y recurrencia en Caracas', () => {
     expect(visitFits(client, '2026-11-02T13:00:00Z')).toBe(true);
     expect(visitFits(client, '2026-11-02T02:00:00Z')).toBe(false);

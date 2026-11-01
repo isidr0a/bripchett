@@ -1,3 +1,5 @@
+import type { VisitSlot } from '@briochett/contracts';
+
 export const errorMessage = (e: unknown) =>
   e instanceof Error ? e.message : 'Ocurrió un error. Vuelve a intentar.';
 export function dateTime(value: string) {
@@ -16,3 +18,6 @@ export function today() {
   }).format(new Date());
 }
 export const toISO = (value: string) => new Date(value + ':00-04:00').toISOString();
+
+export const visitSlotTime = (slot: VisitSlot) =>
+  slot.allDay ? 'Cualquier horario' : `${slot.start}–${slot.end}`;

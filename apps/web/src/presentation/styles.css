@@ -517,12 +517,40 @@ tbody tr:last-child td {
 .full {
   grid-column: 1/-1;
 }
-.slot-row {
+.visit-availability {
   display: grid;
-  grid-template-columns: 1.2fr 1fr 1fr 48px;
+  gap: 16px;
+}
+.visit-presets {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  align-items: end;
-  margin: 12px 0;
+}
+.visit-week {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 175px), 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.visit-day {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #f9f8f6;
+}
+.visit-day.selected {
+  border-color: #b86b2b66;
+  background: #fffaf4;
+}
+.visit-day-heading {
+  font-weight: 600;
+}
+.visit-time-slot {
+  display: grid;
+  gap: 10px;
 }
 .detail-grid {
   display: grid;
@@ -809,15 +837,6 @@ tbody tr:last-child td {
   }
   .pagination button {
     flex: 1;
-  }
-  .slot-row {
-    grid-template-columns: 1fr 1fr;
-  }
-  .slot-row > label:first-child {
-    grid-column: 1/-1;
-  }
-  .slot-row > button {
-    grid-column: 1/-1;
   }
   .detail-grid {
     grid-template-columns: 1fr;

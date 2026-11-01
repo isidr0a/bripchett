@@ -5,7 +5,7 @@ import AppPagination from '../components/AppPagination.vue';
 import AppModal from '../components/AppModal.vue';
 import ClientSelector from '../components/ClientSelector.vue';
 import OrderWizard from '../components/OrderWizard.vue';
-import { dateTime } from '../../shared/formatters';
+import { dateTime, visitSlotTime } from '../../shared/formatters';
 import { useRoutes } from '../../application/composables/useRoutes';
 const {
   auth,
@@ -195,7 +195,7 @@ const {
         <h3>{{ client.name }}</h3>
         <p class="muted">{{ client.recurrence }} · Desde {{ client.recurrenceStart }}</p>
         <p v-for="(s, i) in client.slots" :key="i" class="small">
-          {{ days[s.day] }}: {{ s.start }}–{{ s.end }}
+          {{ days[s.day] }}: {{ visitSlotTime(s) }}
         </p>
         <p v-if="!client.slots.length" class="notice">
           Administración debe configurar los horarios de este cliente.

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { clientMissing } from '@briochett/contracts';
+import { visitSlotTime } from '../../shared/formatters';
 import PageHeader from '../components/PageHeader.vue';
 import AppPagination from '../components/AppPagination.vue';
 import AppModal from '../components/AppModal.vue';
@@ -169,7 +170,7 @@ const {
       <section>
         <h3>Disponibilidad de visitas</h3>
         <p v-for="(slot, i) in selected.slots" :key="i">
-          {{ days[slot.day] }} · {{ slot.start }}–{{ slot.end }}
+          {{ days[slot.day] }} · {{ visitSlotTime(slot) }}
         </p>
         <p v-if="!selected.slots.length" class="muted">Sin horarios configurados.</p>
         <p class="muted small">{{ selected.recurrence }} · Desde {{ selected.recurrenceStart }}</p>

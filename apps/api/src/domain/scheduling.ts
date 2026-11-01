@@ -20,7 +20,8 @@ export function visitFits(client: Client, iso: string) {
     minute: '2-digit',
     hour12: false,
   }).format(date);
-  if (!client.slots.some((s) => s.day === day && s.start <= time && time < s.end)) return false;
+  if (!client.slots.some((s) => s.day === day && (s.allDay || (s.start <= time && time < s.end))))
+    return false;
   const anchor = new Date(client.recurrenceStart + 'T00:00:00Z'),
     target = new Date(dayDate + 'T00:00:00Z'),
     days = Math.floor((+target - +anchor) / 86400000);
