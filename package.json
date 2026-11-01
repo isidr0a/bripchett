@@ -1,0 +1,30 @@
+{
+  "name": "briochett-sistema",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web 'npm run dev -w @briochett/api' 'npm run dev -w @briochett/web'",
+    "check": "npm run check --workspaces --if-present",
+    "build": "npm run build -w @briochett/web",
+    "test": "vitest run",
+    "db:migrate": "npm run db:migrate -w @briochett/api",
+    "seed:dev": "node scripts/seed-dev.mjs",
+    "bootstrap": "node scripts/bootstrap.mjs",
+    "deploy:api": "npm run check -w @briochett/api && npm run deploy -w @briochett/api",
+    "deploy:web": "npm run build && npm run deploy -w @briochett/web",
+    "setup:dev": "node scripts/setup-dev.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "latest",
+    "@types/node": "latest",
+    "concurrently": "latest",
+    "miniflare": "^5.20261023.3-beta",
+    "typescript": "latest",
+    "vitest": "latest",
+    "wrangler": "latest"
+  }
+}
