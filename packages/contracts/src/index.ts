@@ -1,4 +1,7 @@
 import { z } from 'zod';
+import { routeFrequencies, recurringRouteDates, type RouteRecurrence } from './route-recurrence';
+export { routeFrequencies, recurringRouteDates, addCalendarDays } from './route-recurrence';
+export type { RouteFrequency, RouteRecurrence } from './route-recurrence';
 
 export const roles = ['administracion', 'vendedor', 'preparacion', 'supervision'] as const;
 export type Role = (typeof roles)[number];
@@ -203,6 +206,13 @@ export const routeSchema = z
     name: z.string().trim().min(2).max(100),
     sellerId: z.string().min(1),
     date: z.iso.date(),
+    recurrence: z
+      .object({
+        frequency: z.enum(routeFrequencies),
+        until: z.iso.date(),
+      })
+      .nullable()
+      .default(null),
     stops: z
       .array(
         z.object({
@@ -216,6 +226,10 @@ export const routeSchema = z
   .refine(
     (v) => new Set(v.stops.map((s) => s.clientId)).size === v.stops.length,
     'No repitas clientes en la ruta.',
+  )
+  .refine(
+    (v) => !v.recurrence || recurringRouteDates(v.date, v.recurrence).length >= 2,
+    'La repetición debe incluir al menos dos fechas y finalizar dentro de un año desde el inicio.',
   );
 export const visitSchema = z.object({
   clientId: z.string().min(1),
@@ -251,7 +265,15 @@ export type Route = {
   date: string;
   sellerId: string;
   sellerName: string;
-  stops: { clientId: string; clientName: string; time: string; visitId: string }[];
+  seriesId: string | null;
+  recurrence: (RouteRecurrence & { startDate: string }) | null;
+  stops: {
+    clientId: string;
+    clientName: string;
+    time: string;
+    visitId: string;
+    status: Visit['status'];
+  }[];
 };
 export type Page<T> = { items: T[]; total: number; page: number; pageSize: number };
 export type ApiError = { error: { code: string; message: string; details?: unknown } };

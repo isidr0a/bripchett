@@ -54,7 +54,14 @@ export type PlannedStop = {
   scheduledAt: string;
   position: number;
 };
-export type RouteRegistration = { id: string; input: RouteInput; stops: PlannedStop[]; at: string };
+export type RouteRegistration = {
+  id: string;
+  input: RouteInput;
+  seriesId: string | null;
+  recurrence: Route['recurrence'];
+  stops: PlannedStop[];
+  at: string;
+};
 export type VisitRegistration = {
   id: string;
   clientId: string;
@@ -116,8 +123,8 @@ export interface OrderRepository {
 
 export interface PlanningRepository {
   listRoutes(pagination: Pagination, sellerId?: string): Promise<Page<Route>>;
-  routeExists(id: string): Promise<boolean>;
-  saveRoute(route: RouteRegistration, editing: boolean): Promise<void>;
+  findRoute(id: string): Promise<Route | null>;
+  saveRoutes(routes: RouteRegistration[], editingId?: string): Promise<void>;
   listVisits(pagination: Pagination, sellerId?: string): Promise<Page<Visit>>;
   findVisit(id: string): Promise<Visit | null>;
   createVisit(visit: VisitRegistration): Promise<void>;

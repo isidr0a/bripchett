@@ -121,7 +121,13 @@ paths['/api/v1/orders'].post.parameters = [
 operation(
   '/api/v1/routes/{id}',
   'patch',
-  'Reorganizar una ruta sin visitas registradas',
+  'Editar una fecha pendiente o convertir una ruta individual en recurrente',
+  routeSchema,
+);
+operation(
+  '/api/v1/routes',
+  'post',
+  'Planificar una ruta o una serie recurrente con visitas independientes; todas las fechas se guardan atómicamente',
   routeSchema,
 );
 operation('/api/v1/visits/{id}', 'get', 'Consultar visita');

@@ -1,7 +1,15 @@
 import type { NamedUser } from '@briochett/contracts';
-import { ref, reactive, onMounted } from 'vue';
+import { ref, reactive, onMounted, computed, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import { type Route, type Visit, type Client } from '@briochett/contracts';
+import {
+  recurringRouteDates,
+  addCalendarDays,
+  routeSchema,
+  type RouteFrequency,
+  type Route,
+  type Visit,
+  type Client,
+} from '@briochett/contracts';
 import { useAuth } from '../stores/auth';
 import { api } from '../../infrastructure/http/api-client';
 import { errorMessage, today, toISO } from '../../shared/formatters';
@@ -20,11 +28,15 @@ export function useRoutes() {
     client = ref<Client | null>(null),
     visit = ref<Visit | null>(null),
     wizard = ref<{ clientId: string; visitId: string } | null>(null);
-  const editingRouteId = ref<string | null>(null);
+  const editingRouteId = ref<string | null>(null),
+    editingSeries = ref<Route['recurrence']>(null),
+    repeatEnabled = ref(false);
   const form = reactive({
       name: '',
       sellerId: '',
       date: today(),
+      frequency: 'semanal' as RouteFrequency,
+      until: addCalendarDays(today(), 28),
       stops: [] as { clientId: string; clientName: string; time: string }[],
     }),
     scheduled = ref(today() + 'T09:00'),
@@ -32,6 +44,22 @@ export function useRoutes() {
     nextEnabled = ref(false),
     nextAt = ref('');
   const days = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+  const recurrence = computed(() =>
+    repeatEnabled.value && !editingSeries.value
+      ? { frequency: form.frequency, until: form.until }
+      : null,
+  );
+  const plannedDates = computed(() => recurringRouteDates(form.date, recurrence.value));
+  watch([() => form.date, () => form.frequency, repeatEnabled], () => {
+    if (
+      repeatEnabled.value &&
+      recurringRouteDates(form.date, { frequency: form.frequency, until: form.until }).length < 2
+    )
+      form.until = addCalendarDays(
+        form.date || today(),
+        form.frequency === 'mensual' ? 120 : form.frequency === 'quincenal' ? 56 : 28,
+      );
+  });
   onMounted(async () => {
     if (auth.isAdmin)
       try {
@@ -50,7 +78,16 @@ export function useRoutes() {
   });
   function openRoute() {
     editingRouteId.value = null;
-    Object.assign(form, { name: '', sellerId: '', date: today(), stops: [] });
+    editingSeries.value = null;
+    repeatEnabled.value = false;
+    Object.assign(form, {
+      name: '',
+      sellerId: '',
+      date: today(),
+      frequency: 'semanal',
+      until: addCalendarDays(today(), 28),
+      stops: [],
+    });
     error.value = '';
     selecting.value = false;
     modal.value = 'route';
@@ -79,17 +116,23 @@ export function useRoutes() {
     [form.stops[i], form.stops[j]] = [form.stops[j], form.stops[i]];
   }
   async function saveRoute() {
+    const input = routeSchema.safeParse({
+      name: form.name,
+      sellerId: form.sellerId,
+      date: form.date,
+      recurrence: recurrence.value,
+      stops: form.stops.map((s) => ({ clientId: s.clientId, time: s.time })),
+    });
+    if (!input.success) {
+      error.value = input.error.issues.map((issue) => issue.message).join(' ');
+      return;
+    }
     busy.value = true;
     error.value = '';
     try {
       await api(editingRouteId.value ? '/routes/' + editingRouteId.value : '/routes', {
         method: editingRouteId.value ? 'PATCH' : 'POST',
-        body: {
-          name: form.name,
-          sellerId: form.sellerId,
-          date: form.date,
-          stops: form.stops.map((s) => ({ clientId: s.clientId, time: s.time })),
-        },
+        body: input.data,
       });
       modal.value = null;
       routes.load();
@@ -135,15 +178,29 @@ export function useRoutes() {
   }
   function editRoute(r: Route) {
     editingRouteId.value = r.id;
+    editingSeries.value = r.recurrence;
+    repeatEnabled.value = false;
     Object.assign(form, {
       name: r.name,
       sellerId: r.sellerId,
       date: r.date,
+      frequency: 'semanal',
+      until: addCalendarDays(r.date, 28),
       stops: r.stops.map((s) => ({ ...s })),
     });
     error.value = '';
     selecting.value = false;
     modal.value = 'route';
+  }
+  function repeatRoute(r: Route) {
+    editRoute(r);
+    editingRouteId.value = null;
+    editingSeries.value = null;
+    let date = addCalendarDays(r.date, 7);
+    while (date < today()) date = addCalendarDays(date, 7);
+    form.date = date;
+    form.until = addCalendarDays(date, 28);
+    repeatEnabled.value = true;
   }
   async function noOrder() {
     if (!visit.value) return;
@@ -187,6 +244,10 @@ export function useRoutes() {
     visit,
     wizard,
     form,
+    repeatEnabled,
+    editingSeries,
+    plannedDates,
+    editingRouteId,
     scheduled,
     notes,
     nextEnabled,
@@ -201,6 +262,7 @@ export function useRoutes() {
     showVisit,
     showStop,
     editRoute,
+    repeatRoute,
     noOrder,
     withOrder,
   };

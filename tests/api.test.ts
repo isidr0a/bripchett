@@ -96,7 +96,12 @@ beforeAll(async () => {
     BOOTSTRAP_TOKEN: 'test-only-bootstrap',
     ENVIRONMENT: 'test',
   };
-  for (const file of ['0001_initial.sql', '0002_concurrency_guards.sql']) {
+  for (const file of [
+    '0001_initial.sql',
+    '0002_concurrency_guards.sql',
+    '0003_recurring_routes.sql',
+    '0004_route_series_guard.sql',
+  ]) {
     const sql = await readFile(new URL('../apps/api/migrations/' + file, import.meta.url), 'utf8');
     const lines = sql.split('\n'),
       statements: string[] = [];
@@ -486,6 +491,246 @@ describe('Precios, pedidos y preparación', () => {
     expect(rs[0].body.id).toBe(rs[1].body.id);
   });
 });
+describe('Rutas recurrentes', () => {
+  async function routeInput(name: string, sellerId = users.vendedor.id) {
+    const customer = await request(
+      '/api/v1/clients',
+      'administracion',
+      'POST',
+      baseClient(name, sellerId),
+    );
+    expect(customer.status).toBe(201);
+    return {
+      name,
+      sellerId,
+      date: '2027-01-04',
+      stops: [{ clientId: customer.body.id, time: '09:00' }],
+    };
+  }
+  it.each([
+    {
+      frequency: 'semanal',
+      until: '2027-01-18',
+      dates: ['2027-01-04', '2027-01-11', '2027-01-18'],
+    },
+    {
+      frequency: 'quincenal',
+      until: '2027-02-01',
+      dates: ['2027-01-04', '2027-01-18', '2027-02-01'],
+    },
+    {
+      frequency: 'mensual',
+      until: '2027-03-31',
+      dates: ['2027-01-04', '2027-02-01', '2027-03-01'],
+    },
+  ])(
+    'crea recorridos $frequency con visitas independientes y paradas ordenadas',
+    async ({ frequency, until, dates }) => {
+      const input = await routeInput('Serie ' + frequency);
+      const other = await routeInput('Segunda parada ' + frequency);
+      input.stops.push({ clientId: other.stops[0].clientId, time: '10:00' });
+      const created = await request('/api/v1/routes', 'administracion', 'POST', {
+        ...input,
+        recurrence: { frequency, until },
+      });
+      expect(created.status, JSON.stringify(created.body)).toBe(201);
+      expect(created.body.dates).toEqual(dates);
+      expect(created.body.occurrences).toBe(3);
+      const list = await request('/api/v1/routes', 'vendedor');
+      const series = list.body.items.filter(
+        (route: any) => route.seriesId === created.body.seriesId,
+      );
+      expect(series).toHaveLength(3);
+      for (const route of series) {
+        expect(route.recurrence).toEqual({ frequency, until, startDate: input.date });
+        expect(route.stops.map((stop: any) => [stop.clientId, stop.time, stop.status])).toEqual(
+          input.stops.map((stop) => [stop.clientId, stop.time, 'programada']),
+        );
+      }
+      expect(
+        new Set(series.flatMap((route: any) => route.stops.map((stop: any) => stop.visitId))).size,
+      ).toBe(6);
+    },
+  );
+  it('convierte una ruta existente y permite editar una fecha sin cambiar las demás', async () => {
+    const input = await routeInput('Convertir ruta');
+    const one = await request('/api/v1/routes', 'administracion', 'POST', input);
+    expect(one.status).toBe(201);
+    const recurring = await request('/api/v1/routes/' + one.body.id, 'administracion', 'PATCH', {
+      ...input,
+      recurrence: { frequency: 'semanal', until: '2027-01-18' },
+    });
+    expect(recurring.status).toBe(200);
+    await expect(
+      db.prepare('UPDATE routes SET series_id=NULL WHERE id=?').bind(one.body.id).run(),
+    ).rejects.toThrow(/ROUTE_SERIES_CHANGED/);
+    const series = (await request('/api/v1/routes', 'vendedor')).body.items.filter(
+      (route: any) => route.seriesId === one.body.id,
+    );
+    const middle = series.find((route: any) => route.date === '2027-01-11');
+    const edited = await request('/api/v1/routes/' + middle.id, 'administracion', 'PATCH', {
+      ...input,
+      name: 'Excepción de una fecha',
+      date: middle.date,
+      stops: [{ ...input.stops[0], time: '11:00' }],
+    });
+    expect(edited.status).toBe(200);
+    const updated = (await request('/api/v1/routes', 'vendedor')).body.items.filter(
+      (route: any) => route.seriesId === one.body.id,
+    );
+    expect(updated).toHaveLength(3);
+    expect(updated.find((route: any) => route.date === middle.date).stops[0].time).toBe('11:00');
+    expect(
+      updated
+        .filter((route: any) => route.date !== middle.date)
+        .every((route: any) => route.stops[0].time === '09:00'),
+    ).toBe(true);
+    const stop = updated.find((route: any) => route.date === middle.date).stops[0];
+    expect(
+      (
+        await request('/api/v1/visits/' + stop.visitId + '/result', 'vendedor', 'POST', {
+          result: 'sin_pedido',
+          notes: 'Visita registrada',
+          nextAt: null,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await request('/api/v1/routes/' + middle.id, 'administracion', 'PATCH', {
+          ...input,
+          date: middle.date,
+        })
+      ).status,
+    ).toBe(409);
+  });
+  it('rechaza toda la serie si un cliente no está disponible en una fecha posterior', async () => {
+    const input = await routeInput('Cliente quincenal');
+    const id = input.stops[0].clientId;
+    const customer = (await request('/api/v1/clients/' + id)).body;
+    expect(
+      (
+        await request('/api/v1/clients/' + id, 'administracion', 'PATCH', {
+          ...customer,
+          recurrence: 'quincenal',
+          recurrenceStart: input.date,
+        })
+      ).status,
+    ).toBe(200);
+    const rejected = await request('/api/v1/routes', 'administracion', 'POST', {
+      ...input,
+      recurrence: { frequency: 'semanal', until: '2027-01-18' },
+    });
+    expect(rejected.status).toBe(422);
+    expect(rejected.body.error.message).toContain('2027-01-11');
+    expect(
+      (
+        await db
+          .prepare('SELECT count(*) total FROM visits WHERE client_id=?')
+          .bind(id)
+          .first<{ total: number }>()
+      )?.total,
+    ).toBe(0);
+    expect(
+      (
+        await db
+          .prepare('SELECT count(*) total FROM routes WHERE name=?')
+          .bind(input.name)
+          .first<{ total: number }>()
+      )?.total,
+    ).toBe(0);
+  });
+  it('revierte todas las fechas si una visita ya existe y evita duplicados en reintentos concurrentes', async () => {
+    const input = await routeInput('Colisión de serie');
+    const body = { ...input, recurrence: { frequency: 'semanal', until: '2027-01-18' } };
+    expect(
+      (
+        await request('/api/v1/visits', 'vendedor', 'POST', {
+          clientId: input.stops[0].clientId,
+          scheduledAt: '2027-01-11T13:00:00Z',
+        })
+      ).status,
+    ).toBe(201);
+    expect((await request('/api/v1/routes', 'administracion', 'POST', body)).status).toBe(409);
+    expect(
+      (
+        await db
+          .prepare('SELECT count(*) total FROM routes WHERE name=?')
+          .bind(input.name)
+          .first<{ total: number }>()
+      )?.total,
+    ).toBe(0);
+    const unique = await routeInput('Reintento de serie');
+    const retryBody = { ...unique, recurrence: body.recurrence };
+    const results = await Promise.all([
+      request('/api/v1/routes', 'administracion', 'POST', retryBody),
+      request('/api/v1/routes', 'administracion', 'POST', retryBody),
+    ]);
+    expect(results.map((result) => result.status).sort()).toEqual([201, 409]);
+    expect(
+      (
+        await db
+          .prepare('SELECT count(*) total FROM routes WHERE name=?')
+          .bind(unique.name)
+          .first<{ total: number }>()
+      )?.total,
+    ).toBe(3);
+    expect(
+      (
+        await db
+          .prepare('SELECT count(*) total FROM visits WHERE client_id=?')
+          .bind(unique.stops[0].clientId)
+          .first<{ total: number }>()
+      )?.total,
+    ).toBe(3);
+  });
+  it('detecta visitas existentes aunque la fecha esté guardada sin milisegundos', async () => {
+    const input = await routeInput('Fecha histórica');
+    await db
+      .prepare(
+        'INSERT INTO visits(id,client_id,seller_id,scheduled_at,created_at) VALUES(?,?,?,?,?)',
+      )
+      .bind(
+        randomUUID(),
+        input.stops[0].clientId,
+        input.sellerId,
+        '2027-01-04T13:00:00Z',
+        new Date().toISOString(),
+      )
+      .run();
+    const duplicate = await request('/api/v1/visits', 'vendedor', 'POST', {
+      clientId: input.stops[0].clientId,
+      scheduledAt: '2027-01-04T13:00:00.000Z',
+    });
+    expect(duplicate.status).toBe(409);
+    expect(
+      (
+        await db
+          .prepare('SELECT count(*) total FROM visits WHERE client_id=?')
+          .bind(input.stops[0].clientId)
+          .first<{ total: number }>()
+      )?.total,
+    ).toBe(1);
+  });
+  it('reserva la creación y conversión para administración y restringe las rutas por vendedor', async () => {
+    const input = await routeInput('Serie de otro vendedor', users.second.id);
+    const body = { ...input, recurrence: { frequency: 'quincenal', until: '2027-01-18' } };
+    const saved = await request('/api/v1/routes', 'administracion', 'POST', body);
+    expect(saved.status).toBe(201);
+    for (const role of ['vendedor', 'preparacion', 'supervision']) {
+      expect((await request('/api/v1/routes', role, 'POST', body)).status).toBe(403);
+      expect((await request('/api/v1/routes/' + saved.body.id, role, 'PATCH', input)).status).toBe(
+        403,
+      );
+    }
+    const seller = await request('/api/v1/routes', 'vendedor');
+    expect(seller.body.items.some((route: any) => route.seriesId === saved.body.seriesId)).toBe(
+      false,
+    );
+    expect((await request('/api/v1/routes', 'supervision')).status).toBe(200);
+  });
+});
+
 describe('Rutas, visitas, reportes e integración', () => {
   it('guarda cualquier horario y permite visitas al final del día seleccionado', async () => {
     const created = await request('/api/v1/clients', 'administracion', 'POST', {
@@ -558,7 +803,9 @@ describe('Rutas, visitas, reportes e integración', () => {
         .status,
     ).toBe(409);
     const next = await db
-      .prepare('SELECT count(*) n FROM visits WHERE client_id=? AND scheduled_at=?')
+      .prepare(
+        'SELECT count(*) n FROM visits WHERE client_id=? AND julianday(scheduled_at)=julianday(?)',
+      )
       .bind(client.id, result.nextAt)
       .first<any>();
     expect(next.n).toBe(1);
@@ -640,7 +887,9 @@ describe('Rutas, visitas, reportes e integración', () => {
     expect(
       (
         await db
-          .prepare('SELECT count(*) n FROM visits WHERE client_id=? AND scheduled_at=?')
+          .prepare(
+            'SELECT count(*) n FROM visits WHERE client_id=? AND julianday(scheduled_at)=julianday(?)',
+          )
           .bind(client.id, nextAt)
           .first<any>()
       ).n,

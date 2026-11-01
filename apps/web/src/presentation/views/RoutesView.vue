@@ -21,6 +21,10 @@ const {
   visit,
   wizard,
   form,
+  repeatEnabled,
+  editingSeries,
+  plannedDates,
+  editingRouteId,
   scheduled,
   notes,
   nextEnabled,
@@ -35,6 +39,7 @@ const {
   showVisit,
   showStop,
   editRoute,
+  repeatRoute,
   noOrder,
   withOrder,
 } = useRoutes();
@@ -60,10 +65,23 @@ const {
         <div>
           <h2>{{ r.name }}</h2>
           <p class="muted">{{ r.date }} · {{ r.sellerName }}</p>
+          <p v-if="r.recurrence" class="small">
+            <span class="badge">Recurrente · {{ statusLabels[r.recurrence.frequency] }}</span>
+            <span class="muted"> Hasta {{ r.recurrence.until }}</span>
+          </p>
         </div>
-        <button v-if="auth.isAdmin" class="secondary" @click="editRoute(r)">
-          Editar ruta y orden de paradas
-        </button>
+        <div v-if="auth.isAdmin" class="actions">
+          <button
+            v-if="r.stops.every((stop) => stop.status === 'programada')"
+            class="secondary"
+            @click="editRoute(r)"
+          >
+            {{ r.seriesId ? 'Editar esta fecha' : 'Editar ruta y repetición' }}
+          </button>
+          <button class="secondary" @click="repeatRoute(r)">
+            {{ r.seriesId ? 'Crear otra repetición' : 'Repetir ruta' }}
+          </button>
+        </div>
         <ol class="route-stops">
           <li v-for="s in r.stops" :key="s.visitId">
             <strong>{{ s.time }}</strong
@@ -123,7 +141,9 @@ const {
     v-if="modal"
     :title="
       modal === 'route'
-        ? 'Planificar ruta'
+        ? editingRouteId
+          ? 'Editar ruta'
+          : 'Planificar ruta'
         : modal === 'schedule'
           ? 'Programar visita'
           : 'Registro de visita'
@@ -148,6 +168,53 @@ const {
             </select></label
           ><label>Fecha de visitas<input v-model="form.date" type="date" required /></label>
         </div>
+        <p v-if="editingSeries" class="notice">
+          Esta ruta pertenece a una repetición {{ editingSeries.frequency }} hasta el
+          {{ editingSeries.until }}. Los cambios afectan solo a esta fecha; las otras visitas y sus
+          resultados se conservan.
+        </p>
+        <fieldset v-else class="stack">
+          <legend>Repetición de la ruta</legend>
+          <label class="check"
+            ><input v-model="repeatEnabled" type="checkbox" /> Repetir esta ruta</label
+          >
+          <template v-if="repeatEnabled">
+            <div class="form-grid">
+              <label
+                >Frecuencia<select v-model="form.frequency">
+                  <option value="semanal">Semanal</option>
+                  <option value="quincenal">Quincenal</option>
+                  <option value="mensual">Mensual</option>
+                </select></label
+              >
+              <label
+                >Repetir hasta<input v-model="form.until" type="date" required :min="form.date"
+              /></label>
+            </div>
+            <p v-if="form.frequency === 'mensual'" class="muted small">
+              Se repite el mismo día de la semana y en la misma posición del mes, por ejemplo, el
+              primer lunes. Si un mes no tiene esa fecha, se omite.
+            </p>
+            <p class="muted small">
+              Se crearán recorridos independientes con el mismo vendedor, orden y horas. Planifica
+              hasta un año desde la primera fecha.
+            </p>
+            <div v-if="plannedDates.length > 1" class="notice" role="status">
+              <strong
+                >{{ plannedDates.length }} fechas de ruta ·
+                {{ plannedDates.length * form.stops.length }} visitas</strong
+              >
+              <p class="small">
+                {{ plannedDates.slice(0, 4).join(' · ')
+                }}<span v-if="plannedDates.length > 4"> · … · {{ plannedDates.at(-1) }}</span>
+              </p>
+            </div>
+            <p v-else class="notice error" role="alert">
+              Selecciona una fecha final que incluya al menos dos recorridos, dentro del próximo
+              año.
+            </p>
+          </template>
+        </fieldset>
         <p class="muted small">
           Las paradas deben respetar los días, horarios y recurrencia de cada negocio. Puedes
           cambiar su orden.
@@ -185,7 +252,13 @@ const {
         >
           Agregar cliente a la ruta</button
         ><button :disabled="busy || !form.stops.length">
-          {{ busy ? 'Guardando…' : 'Guardar ruta y visitas' }}
+          {{
+            busy
+              ? 'Guardando…'
+              : repeatEnabled
+                ? 'Guardar todas las fechas y visitas'
+                : 'Guardar ruta y visitas'
+          }}
         </button>
       </form></template
     >

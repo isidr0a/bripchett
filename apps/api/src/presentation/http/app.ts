@@ -118,7 +118,7 @@ app.onError((error, c) => {
   if (error instanceof HTTPException) return error.getResponse();
   const message = String(error.message);
   if (
-    /UNIQUE constraint|constraint failed|ORDER_CLIENT_SCOPE|ORDER_NOT_VALIDATED|LAST_ADMIN|PRODUCT_CHANGED|VISIT_CLIENT_SCOPE|ROUTE_STARTED/i.test(
+    /UNIQUE constraint|constraint failed|ORDER_CLIENT_SCOPE|ORDER_NOT_VALIDATED|LAST_ADMIN|PRODUCT_CHANGED|VISIT_CLIENT_SCOPE|VISIT_DUPLICATE|ROUTE_STARTED|ROUTE_SERIES_CHANGED/i.test(
       message,
     )
   )

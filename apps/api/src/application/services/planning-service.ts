@@ -1,9 +1,15 @@
-import type { RouteInput, SessionUser, VisitInput, VisitResultInput } from '@briochett/contracts';
-import type { OrderRepository, Pagination, PlanningRepository } from '../ports';
+import {
+  recurringRouteDates,
+  type RouteInput,
+  type SessionUser,
+  type VisitInput,
+  type VisitResultInput,
+} from '@briochett/contracts';
+import type { OrderRepository, Pagination, PlanningRepository, RouteRegistration } from '../ports';
 import type { CatalogService } from './catalog-service';
 import { fail } from '../../domain/errors';
 import { now, uid } from '../../domain/primitives';
-import { requireSchedule } from '../../domain/scheduling';
+import { requireSchedule, visitFits } from '../../domain/scheduling';
 
 export class PlanningService {
   constructor(
@@ -32,29 +38,58 @@ export class PlanningService {
     return visit;
   }
   async saveRoute(input: RouteInput, existingId?: string) {
-    if (existingId && !(await this.repository.routeExists(existingId)))
-      fail(404, 'ROUTE_NOT_FOUND', 'Ruta no encontrada.');
+    const existing = existingId ? await this.repository.findRoute(existingId) : null;
+    if (existingId && !existing) fail(404, 'ROUTE_NOT_FOUND', 'Ruta no encontrada.');
+    if (existing?.seriesId && input.recurrence)
+      fail(
+        422,
+        'ROUTE_SERIES',
+        'Esta ruta ya pertenece a una repetición. Puedes editar esta fecha o crear otra repetición.',
+      );
     await this.catalog.requireSeller(input.sellerId);
-    const stops = [];
-    for (const [position, stop] of input.stops.entries()) {
-      const client = await this.catalog.client(stop.clientId, true);
+    const clients = await Promise.all(
+      input.stops.map((stop) => this.catalog.client(stop.clientId, true)),
+    );
+    for (const client of clients)
       if (client.sellerId !== input.sellerId)
         fail(422, 'ROUTE_CLIENT', 'Todas las paradas deben pertenecer al vendedor de la ruta.');
-      const scheduledAt = new Date(input.date + 'T' + stop.time + ':00-04:00').toISOString();
-      requireSchedule(client, scheduledAt);
-      stops.push({
-        id: uid(),
-        clientId: stop.clientId,
-        sellerId: input.sellerId,
-        scheduledAt,
-        position,
-      });
-    }
     const id = existingId || uid();
-    await this.repository.saveRoute({ id, input, stops, at: now() }, !!existingId);
-    return { id, ...input };
+    const dates = recurringRouteDates(input.date, input.recurrence);
+    if (!dates.length) fail(422, 'ROUTE_RECURRENCE', 'Revisa las fechas de repetición de la ruta.');
+    const seriesId = existing?.seriesId || (input.recurrence ? id : null);
+    const recurrence =
+      existing?.recurrence ||
+      (input.recurrence ? { ...input.recurrence, startDate: input.date } : null);
+    const at = now();
+    const routes: RouteRegistration[] = dates.map((date, index) => ({
+      id: index === 0 ? id : id + ':' + date,
+      input: { ...input, date },
+      seriesId,
+      recurrence,
+      at,
+      stops: input.stops.map((stop, position) => {
+        const scheduledAt = new Date(date + 'T' + stop.time + ':00-04:00').toISOString();
+        if (!visitFits(clients[position], scheduledAt)) {
+          fail(
+            422,
+            'VISIT_WINDOW',
+            `${clients[position].name}: la visita del ${date} a las ${stop.time} no coincide con sus días, horario o recurrencia. No se guardó ninguna fecha.`,
+          );
+        }
+        return {
+          id: uid(),
+          clientId: stop.clientId,
+          sellerId: input.sellerId,
+          scheduledAt,
+          position,
+        };
+      }),
+    }));
+    await this.repository.saveRoutes(routes, existingId);
+    return { id, ...input, seriesId, recurrence, occurrences: routes.length, dates };
   }
   async scheduleVisit(input: VisitInput) {
+    const scheduledAt = new Date(input.scheduledAt).toISOString();
     const client = await this.catalog.client(input.clientId, true);
     requireSchedule(client, input.scheduledAt);
     const sellerId = this.actor.role === 'vendedor' ? this.actor.id : client.sellerId;
@@ -68,10 +103,10 @@ export class PlanningService {
       id,
       clientId: input.clientId,
       sellerId,
-      scheduledAt: input.scheduledAt,
+      scheduledAt,
       at: now(),
     });
-    return { id, ...input };
+    return { id, ...input, scheduledAt };
   }
   async completeVisit(id: string, input: VisitResultInput) {
     const visit = await this.visit(id);
@@ -100,7 +135,7 @@ export class PlanningService {
           id: uid(),
           clientId: visit.clientId,
           sellerId: visit.sellerId,
-          scheduledAt: input.nextAt,
+          scheduledAt: new Date(input.nextAt).toISOString(),
           at,
         }
       : undefined;

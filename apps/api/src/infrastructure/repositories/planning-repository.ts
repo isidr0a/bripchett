@@ -8,6 +8,10 @@ import type {
 } from '../../application/ports';
 import { D1Repository, count } from './d1-repository';
 
+type RouteRow = Omit<Route, 'stops' | 'recurrence'> & { recurrenceJson: string | null };
+const routeSelect =
+  'SELECT r.id,r.name,r.date,r.seller_id sellerId,u.name sellerName,r.series_id seriesId,r.recurrence_json recurrenceJson FROM routes r JOIN user u ON u.id=r.seller_id';
+
 const visitSelect =
   'SELECT v.id,v.client_id clientId,c.name clientName,v.seller_id sellerId,u.name sellerName,v.scheduled_at scheduledAt,v.status,v.notes,v.order_id orderId,v.route_id routeId FROM visits v JOIN clients c ON c.id=v.client_id JOIN user u ON u.id=v.seller_id';
 const localTime = new Intl.DateTimeFormat('en-GB', {
@@ -22,64 +26,94 @@ export class D1PlanningRepository extends D1Repository implements PlanningReposi
     const where = sellerId ? ' WHERE r.seller_id=?' : '',
       args = sellerId ? [sellerId] : [];
     const rows = await this.db
-      .prepare(
-        'SELECT r.id,r.name,r.date,r.seller_id sellerId,u.name sellerName FROM routes r JOIN user u ON u.id=r.seller_id' +
-          where +
-          ' ORDER BY r.date DESC,r.created_at DESC LIMIT ? OFFSET ?',
-      )
+      .prepare(routeSelect + where + ' ORDER BY r.date DESC,r.created_at DESC LIMIT ? OFFSET ?')
       .bind(...args, pageSize, offset)
-      .all<Omit<Route, 'stops'>>();
-    const items = await Promise.all(
-      rows.results.map(async (route) => {
-        const visits = await this.db
-          .prepare(visitSelect + ' WHERE v.route_id=? ORDER BY v.route_position')
-          .bind(route.id)
-          .all<Visit>();
-        return {
-          ...route,
-          stops: visits.results.map((v) => ({
-            clientId: v.clientId,
-            clientName: v.clientName,
-            time: localTime.format(new Date(v.scheduledAt)),
-            visitId: v.id,
-            status: v.status,
-          })),
-        };
-      }),
-    );
+      .all<RouteRow>();
+    const items = await Promise.all(rows.results.map((row) => this.routeWithStops(row)));
     const total = await this.db
       .prepare('SELECT count(*) total FROM routes r' + where)
       .bind(...args)
       .first<{ total: number }>();
     return { items, total: total?.total || 0, page, pageSize };
   }
-  async routeExists(id: string) {
-    return !!(await this.db.prepare('SELECT id FROM routes WHERE id=?').bind(id).first());
+  private async routeWithStops({ recurrenceJson, ...route }: RouteRow): Promise<Route> {
+    const visits = await this.db
+      .prepare(visitSelect + ' WHERE v.route_id=? ORDER BY v.route_position')
+      .bind(route.id)
+      .all<Visit>();
+    return {
+      ...route,
+      recurrence: recurrenceJson ? JSON.parse(recurrenceJson) : null,
+      stops: visits.results.map((v) => ({
+        clientId: v.clientId,
+        clientName: v.clientName,
+        time: localTime.format(new Date(v.scheduledAt)),
+        visitId: v.id,
+        status: v.status,
+      })),
+    };
   }
-  async saveRoute({ id, input, stops, at }: RouteRegistration, editing: boolean) {
-    const statements = editing
-      ? [
-          this.db
-            .prepare('UPDATE routes SET name=?,seller_id=?,date=? WHERE id=?')
-            .bind(input.name, input.sellerId, input.date, id),
-          this.db.prepare("DELETE FROM visits WHERE route_id=? AND status='programada'").bind(id),
-        ]
-      : [
-          this.db
-            .prepare(
-              'INSERT INTO routes(id,name,seller_id,date,created_by,created_at) VALUES(?,?,?,?,?,?)',
-            )
-            .bind(id, input.name, input.sellerId, input.date, this.actorId, at),
-        ];
-    statements.push(
-      ...stops.map((stop) =>
+  async findRoute(id: string) {
+    const row = await this.db
+      .prepare(routeSelect + ' WHERE r.id=?')
+      .bind(id)
+      .first<RouteRow>();
+    return row ? this.routeWithStops(row) : null;
+  }
+  async saveRoutes(routes: RouteRegistration[], editingId?: string) {
+    const first = routes[0];
+    const statements: D1PreparedStatement[] = [];
+    if (editingId) {
+      statements.push(
         this.db
           .prepare(
-            'INSERT INTO visits(id,client_id,seller_id,scheduled_at,route_id,route_position,created_at) VALUES(?,?,?,?,?,?,?)',
+            'UPDATE routes SET name=?,seller_id=?,date=?,series_id=?,recurrence_json=? WHERE id=?',
           )
-          .bind(stop.id, stop.clientId, stop.sellerId, stop.scheduledAt, id, stop.position, at),
-      ),
-      this.audit(editing ? 'actualizar' : 'crear', 'ruta', id),
+          .bind(
+            first.input.name,
+            first.input.sellerId,
+            first.input.date,
+            first.seriesId,
+            first.recurrence ? JSON.stringify(first.recurrence) : null,
+            editingId,
+          ),
+        this.db
+          .prepare("DELETE FROM visits WHERE route_id=? AND status='programada'")
+          .bind(editingId),
+      );
+    }
+    const newRoutes = routes
+      .filter((route) => route.id !== editingId)
+      .map((route) => ({
+        id: route.id,
+        name: route.input.name,
+        sellerId: route.input.sellerId,
+        date: route.input.date,
+        seriesId: route.seriesId,
+        recurrence: route.recurrence ? JSON.stringify(route.recurrence) : null,
+      }));
+    // Los lotes JSON mantienen acotado el número de consultas aunque haya varias fechas y paradas.
+    if (newRoutes.length)
+      statements.push(
+        this.db
+          .prepare(
+            "INSERT INTO routes(id,name,seller_id,date,series_id,recurrence_json,created_by,created_at) SELECT json_extract(value,'$.id'),json_extract(value,'$.name'),json_extract(value,'$.sellerId'),json_extract(value,'$.date'),json_extract(value,'$.seriesId'),json_extract(value,'$.recurrence'),?,? FROM json_each(?)",
+          )
+          .bind(this.actorId, first.at, JSON.stringify(newRoutes)),
+      );
+    const stops = routes.flatMap((route) =>
+      route.stops.map((stop) => ({ ...stop, routeId: route.id })),
+    );
+    statements.push(
+      this.db
+        .prepare(
+          "INSERT INTO visits(id,client_id,seller_id,scheduled_at,route_id,route_position,created_at) SELECT json_extract(value,'$.id'),json_extract(value,'$.clientId'),json_extract(value,'$.sellerId'),json_extract(value,'$.scheduledAt'),json_extract(value,'$.routeId'),json_extract(value,'$.position'),? FROM json_each(?)",
+        )
+        .bind(first.at, JSON.stringify(stops)),
+      this.audit(editingId ? 'actualizar' : 'crear', 'ruta', first.id, {
+        recurrence: first.recurrence,
+        occurrences: routes.length,
+      }),
     );
     await this.db.batch(statements);
   }

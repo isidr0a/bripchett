@@ -1,0 +1,2 @@
+CREATE TRIGGER route_series_guard BEFORE UPDATE ON routes WHEN old.series_id IS NOT NULL AND (new.series_id IS NOT old.series_id OR new.recurrence_json IS NOT old.recurrence_json) BEGIN SELECT RAISE(ABORT,'ROUTE_SERIES_CHANGED'); END;
+CREATE TRIGGER visit_instant_guard BEFORE INSERT ON visits WHEN EXISTS(SELECT 1 FROM visits WHERE client_id=new.client_id AND seller_id=new.seller_id AND julianday(scheduled_at)=julianday(new.scheduled_at)) BEGIN SELECT RAISE(ABORT,'VISIT_DUPLICATE'); END;
