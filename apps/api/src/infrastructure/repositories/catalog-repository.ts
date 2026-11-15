@@ -8,7 +8,12 @@ import type {
   Rate,
   RateInput,
 } from '@briochett/contracts';
-import type { CatalogRepository, ClientSearch, ProductSearch } from '../../application/ports';
+import type {
+  CatalogRepository,
+  ClientSearch,
+  ProductSearch,
+  PendingZoneStop,
+} from '../../application/ports';
 import { D1Repository, count } from './d1-repository';
 
 type ClientRow = {
@@ -20,12 +25,13 @@ type ClientRow = {
   phone: string;
   address: string;
   zone: string;
+  zone_id: string | null;
   seller_id: string | null;
   sellerName: string | null;
   active: number;
   geo_json: string | null;
   geo_updated_by: string | null;
-  slots_json: string;
+  visit_days_json: string;
   recurrence: Client['recurrence'];
   recurrence_start: string;
   updated_at: string;
@@ -46,12 +52,13 @@ function mapClient(row: ClientRow): Client {
     phone: row.phone,
     address: row.address,
     zone: row.zone,
+    zoneId: row.zone_id,
     sellerId: row.seller_id,
     sellerName: row.sellerName || null,
     active: !!row.active,
     geo: row.geo_json ? (JSON.parse(row.geo_json) as Client['geo']) : null,
     geoUpdatedBy: row.geo_updated_by,
-    slots: JSON.parse(row.slots_json) as Client['slots'],
+    visitDays: JSON.parse(row.visit_days_json) as Client['visitDays'],
     recurrence: row.recurrence,
     recurrenceStart: row.recurrence_start,
     updatedAt: row.updated_at,
@@ -75,13 +82,17 @@ export class D1CatalogRepository extends D1Repository implements CatalogReposito
       .first());
   }
   async listClients(query: ClientSearch) {
-    const { page, pageSize, offset, sellerId, active, search } = query;
+    const { page, pageSize, offset, sellerId, zoneId, active, search } = query;
     const where = ['c.deleted_at IS NULL'],
       args: (string | number)[] = [];
     if (sellerId) {
       where.push('c.seller_id=? AND c.active=1');
       args.push(sellerId);
     } else if (active) where.push('c.active=1');
+    if (zoneId) {
+      where.push('c.zone_id=?');
+      args.push(zoneId);
+    }
     if (search) {
       where.push('c.rowid IN (SELECT rowid FROM clients_fts WHERE clients_fts MATCH ?)');
       args.push(search);
@@ -104,7 +115,7 @@ export class D1CatalogRepository extends D1Repository implements CatalogReposito
     await this.db.batch([
       this.db
         .prepare(
-          'INSERT INTO clients(id,code,name,rif,contact,phone,address,zone,seller_id,active,geo_json,geo_updated_by,slots_json,recurrence,recurrence_start,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+          'INSERT INTO clients(id,code,name,rif,contact,phone,address,zone,zone_id,seller_id,active,geo_json,geo_updated_by,visit_days_json,recurrence,recurrence_start,created_at,updated_at) VALUES(?,?,?,?,?,?,?,(SELECT name FROM zones WHERE id=?),?,?,?,?,?,?,?,?,?,?)',
         )
         .bind(
           id,
@@ -114,12 +125,13 @@ export class D1CatalogRepository extends D1Repository implements CatalogReposito
           d.contact,
           d.phone,
           d.address,
-          d.zone,
+          d.zoneId,
+          d.zoneId,
           d.sellerId,
           +d.active,
           d.geo ? JSON.stringify(d.geo) : null,
           d.geo ? this.actorId : null,
-          JSON.stringify(d.slots),
+          JSON.stringify(d.visitDays),
           d.recurrence,
           d.recurrenceStart,
           at,
@@ -128,11 +140,31 @@ export class D1CatalogRepository extends D1Repository implements CatalogReposito
       this.audit('crear', 'cliente', id),
     ]);
   }
-  async updateClient(id: string, d: ClientInput, geoUpdatedBy: string | null, at: string) {
-    await this.db.batch([
+  async zoneImpact(id: string, zoneId: string) {
+    const result = await this.db
+      .prepare(
+        'SELECT visitId,routeId,routeName,scheduledAt,routeZoneId,sellerId,archivesRoute FROM client_zone_stops WHERE clientId=? AND routeZoneId<>? ORDER BY visitId',
+      )
+      .bind(id, zoneId)
+      .all<PendingZoneStop>();
+    return result.results;
+  }
+
+  async updateClient(
+    id: string,
+    d: ClientInput,
+    geoUpdatedBy: string | null,
+    at: string,
+    expected: { updatedAt: string; pending: PendingZoneStop[] },
+  ) {
+    const [result] = await this.db.batch([
       this.db
         .prepare(
-          'UPDATE clients SET name=?,rif=?,contact=?,phone=?,address=?,zone=?,seller_id=?,active=?,geo_json=?,geo_updated_by=?,slots_json=?,recurrence=?,recurrence_start=?,updated_at=? WHERE id=? AND deleted_at IS NULL',
+          `UPDATE clients SET name=?,rif=?,contact=?,phone=?,address=?,zone=(SELECT name FROM zones WHERE id=?),seller_id=?,active=?,
+        geo_json=?,geo_updated_by=?,visit_days_json=?,recurrence=?,recurrence_start=?,updated_at=?,zone_id=?,zone_changed_by=?
+        WHERE id=? AND updated_at=? AND deleted_at IS NULL AND (zone_id IS ? OR
+          (SELECT json_group_array(json_array(visitId,routeId,routeName,scheduledAt,routeZoneId,sellerId,archivesRoute))
+           FROM (SELECT * FROM client_zone_stops WHERE clientId=? AND routeZoneId<>? ORDER BY visitId))=?) RETURNING id`,
         )
         .bind(
           d.name,
@@ -140,19 +172,40 @@ export class D1CatalogRepository extends D1Repository implements CatalogReposito
           d.contact,
           d.phone,
           d.address,
-          d.zone,
+          d.zoneId,
           d.sellerId,
           +d.active,
           d.geo ? JSON.stringify(d.geo) : null,
           geoUpdatedBy,
-          JSON.stringify(d.slots),
+          JSON.stringify(d.visitDays),
           d.recurrence,
           d.recurrenceStart,
           at,
+          d.zoneId,
+          this.actorId,
           id,
+          expected.updatedAt,
+          d.zoneId,
+          id,
+          d.zoneId,
+          JSON.stringify(
+            expected.pending.map((s) => [
+              s.visitId,
+              s.routeId,
+              s.routeName,
+              s.scheduledAt,
+              s.routeZoneId,
+              s.sellerId,
+              s.archivesRoute,
+            ]),
+          ),
         ),
-      this.auditIfChanged('actualizar', 'cliente', id),
+      this.auditIfChanged('actualizar', 'cliente', id, {
+        zoneId: d.zoneId,
+        retiredStops: expected.pending.map((s) => s.visitId),
+      }),
     ]);
+    return result.results.length > 0;
   }
   async completeClient(id: string, d: CompletionInput, sellerId: string | undefined, at: string) {
     const [result] = await this.db.batch([

@@ -8,6 +8,7 @@ export const trashTypes = [
   'routes',
   'visits',
   'orders',
+  'zones',
 ] as const;
 export const trashTypeSchema = z.enum(trashTypes);
 export const deletionScopeSchema = z.enum(['date', 'upcoming']);

@@ -1,5 +1,9 @@
+import { allVisitDays, type SellerClientInput, type ZoneImpact } from '@briochett/contracts';
+import type { ZoneService } from './zone-service';
+import { caracasDate } from '../../domain/scheduling';
 import type {
   ClientInput,
+  Client,
   CompletionInput,
   ProductInput,
   RateInput,
@@ -7,12 +11,13 @@ import type {
 } from '@briochett/contracts';
 import type { CatalogRepository, Pagination } from '../ports';
 import { fail } from '../../domain/errors';
-import { now, uid } from '../../domain/primitives';
+import { hash, now, uid } from '../../domain/primitives';
 
 export class CatalogService {
   constructor(
     private readonly repository: CatalogRepository,
     private readonly actor: SessionUser,
+    private readonly zones: ZoneService,
   ) {}
 
   async client(id: string, active = false) {
@@ -29,7 +34,12 @@ export class CatalogService {
     if (id && !(await this.repository.sellerExists(id)))
       fail(422, 'SELLER', 'Selecciona un vendedor activo.');
   }
-  listClients(pagination: Pagination, query: string, active: boolean) {
+  listClients(
+    pagination: Pagination,
+    query: string,
+    active: boolean,
+    filters: { zoneId?: string; sellerId?: string } = {},
+  ) {
     const q = query.trim().slice(0, 100),
       tokens = q.normalize('NFKC').match(/[\p{L}\p{N}]+/gu) || [];
     if (q && !tokens.length)
@@ -44,10 +54,14 @@ export class CatalogService {
       ...pagination,
       active,
       search,
-      sellerId: this.actor.role === 'vendedor' ? this.actor.id : undefined,
+      zoneId: filters.zoneId,
+      sellerId: this.actor.role === 'vendedor' ? this.actor.id : filters.sellerId,
     });
   }
   async createClient(input: ClientInput) {
+    if (input.geo && +new Date(input.geo.capturedAt) > Date.now() + 60000)
+      fail(422, 'GPS_DATE', 'La fecha de captura no es válida.');
+    await this.zones.requireActive(input.zoneId);
     await this.requireSeller(input.sellerId);
     const id = uid();
     await this.repository.createClient(
@@ -58,14 +72,58 @@ export class CatalogService {
     );
     return this.client(id);
   }
+  createSellerClient(input: SellerClientInput) {
+    return this.createClient({
+      ...input,
+      sellerId: this.actor.id,
+      active: true,
+      visitDays: [...allVisitDays],
+      recurrence: 'semanal',
+      recurrenceStart: caracasDate(),
+    });
+  }
+
+  private async impact(client: Client, zoneId: string) {
+    await this.zones.requireActive(zoneId);
+    const stops =
+      client.zoneId === zoneId ? [] : await this.repository.zoneImpact(client.id, zoneId);
+    const revision = await hash([this.actor.id, client.id, client.updatedAt, zoneId, stops]);
+    return { revision, stops };
+  }
+
+  async previewZoneChange(id: string, zoneId: string): Promise<ZoneImpact> {
+    return this.impact(await this.client(id), zoneId);
+  }
+
   async updateClient(id: string, input: ClientInput) {
     const old = await this.client(id);
     await this.requireSeller(input.sellerId);
+    const impact = await this.impact(old, input.zoneId);
+    if (
+      (impact.stops.length > 0 || input.zoneImpactRevision) &&
+      input.zoneImpactRevision !== impact.revision
+    )
+      fail(
+        409,
+        'ZONE_IMPACT_CHANGED',
+        'Revisa y confirma las paradas afectadas antes de guardar.',
+        impact,
+      );
     const responsible =
       JSON.stringify(input.geo) !== JSON.stringify(old.geo)
         ? this.actor.id
         : old.geoUpdatedBy || null;
-    await this.repository.updateClient(id, this.normalizeClient(input), responsible, now());
+    if (
+      !(await this.repository.updateClient(id, this.normalizeClient(input), responsible, now(), {
+        updatedAt: old.updatedAt,
+        pending: impact.stops,
+      }))
+    )
+      fail(
+        409,
+        'ZONE_IMPACT_CHANGED',
+        'El cliente o sus paradas cambiaron. Revisa la actualización antes de guardar.',
+      );
     return this.client(id);
   }
   async completeClient(id: string, input: CompletionInput) {

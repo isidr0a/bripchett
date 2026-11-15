@@ -2,7 +2,7 @@ import { ref, watch, onUnmounted, useId } from 'vue';
 import type { Client, Page } from '@briochett/contracts';
 import { api } from '../../infrastructure/http/api-client';
 import { errorMessage } from '../../shared/formatters';
-export function useClientSelector() {
+export function useClientSelector(filters: Readonly<{ zoneId?: string; sellerId?: string }> = {}) {
   const q = ref(''),
     page = ref(1),
     data = ref<Page<Client>>({ items: [], total: 0, page: 1, pageSize: 20 }),
@@ -18,7 +18,12 @@ export function useClientSelector() {
     error.value = '';
     try {
       const response = await api<Page<Client>>(
-        '/clients?active=true&page=' + page.value + '&q=' + encodeURIComponent(q.value),
+        '/clients?active=true&page=' +
+          page.value +
+          '&q=' +
+          encodeURIComponent(q.value) +
+          (filters.zoneId ? '&zoneId=' + encodeURIComponent(filters.zoneId) : '') +
+          (filters.sellerId ? '&sellerId=' + encodeURIComponent(filters.sellerId) : ''),
         { signal: controller.signal },
       );
       if (current === controller) data.value = response;
@@ -34,6 +39,10 @@ export function useClientSelector() {
     timer = setTimeout(load, 300);
   });
   watch(page, load);
+  watch([() => filters.zoneId, () => filters.sellerId], () => {
+    page.value = 1;
+    void load();
+  });
   load();
   onUnmounted(() => {
     clearTimeout(timer);

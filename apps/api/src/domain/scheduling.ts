@@ -14,14 +14,7 @@ export function visitFits(client: Client, iso: string) {
   const dayDate = caracasDate(date),
     local = new Date(dayDate + 'T12:00:00Z'),
     day = local.getUTCDay();
-  const time = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'America/Caracas',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(date);
-  if (!client.slots.some((s) => s.day === day && (s.allDay || (s.start <= time && time < s.end))))
-    return false;
+  if (!client.visitDays.includes(day)) return false;
   const anchor = new Date(client.recurrenceStart + 'T00:00:00Z'),
     target = new Date(dayDate + 'T00:00:00Z'),
     days = Math.floor((+target - +anchor) / 86400000);
@@ -36,6 +29,6 @@ export function requireSchedule(c: Client, at: string) {
     fail(
       422,
       'VISIT_WINDOW',
-      'La fecha no coincide con los días, horario o recurrencia del negocio.',
+      'La fecha no coincide con los días permitidos o la recurrencia del negocio.',
     );
 }

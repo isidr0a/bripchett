@@ -533,7 +533,7 @@ tbody tr:last-child td {
   align-items: start;
 }
 .visit-day {
-  display: grid;
+  display: flex;
   gap: 14px;
   min-width: 0;
   padding: 14px;
@@ -547,10 +547,6 @@ tbody tr:last-child td {
 }
 .visit-day-heading {
   font-weight: 600;
-}
-.visit-time-slot {
-  display: grid;
-  gap: 10px;
 }
 .detail-grid {
   display: grid;

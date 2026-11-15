@@ -120,6 +120,12 @@ app.onError((error, c) => {
   if (error instanceof HTTPException) return error.getResponse();
   const message = String(error.message);
   const trashErrors: Record<string, string> = {
+    ZONE_DEPENDENCIES:
+      'Reasigna los clientes vigentes y resuelve las rutas pendientes antes de retirar la zona.',
+    ZONE_UNAVAILABLE: 'La zona dejó de estar activa. Selecciona otra zona.',
+    ROUTE_SERIES_ZONE: 'La zona debe ser la misma en todos los recorridos de la serie.',
+    ROUTE_ZONE: 'El cliente y el recorrido deben pertenecer a la misma zona.',
+
     TRASH_USER_DEPENDENCIES:
       'Resuelve las visitas y rutas pendientes y reasigna o quita los clientes del vendedor.',
     TRASH_CLIENT_DEPENDENCIES: 'Resuelve las visitas pendientes del cliente antes de eliminarlo.',
@@ -135,6 +141,16 @@ app.onError((error, c) => {
     ROUTE_STARTED: 'El recorrido ya tiene visitas realizadas.',
     VISIT_DUPLICATE: 'Ya existe una visita activa para ese cliente, vendedor y horario.',
   };
+  if (/UNIQUE constraint failed: zones\.name_key/i.test(message))
+    return c.json(
+      {
+        error: {
+          code: 'ZONE_NAME_EXISTS',
+          message: 'Ya existe una zona con ese nombre, incluso si está en la Papelera.',
+        },
+      },
+      409,
+    );
   const trashCode = Object.keys(trashErrors).find((code) => message.includes(code));
   if (trashCode)
     return c.json({ error: { code: trashCode, message: trashErrors[trashCode] } }, 409);

@@ -84,6 +84,7 @@ const date = new Intl.DateTimeFormat('en-CA', {
   month: '2-digit',
   day: '2-digit',
 }).format(new Date());
+const zone = (await request('/api/v1/zones', { name: 'Centro' }, a.cookie)).body;
 for (const [i, name] of ['Burger Point', 'Hot Dog House', 'Fast Grill', 'Urban Burger'].entries()) {
   await request(
     '/api/v1/clients',
@@ -93,7 +94,7 @@ for (const [i, name] of ['Burger Point', 'Hot Dog House', 'Fast Grill', 'Urban B
       contact: 'Encargado de compras',
       phone: i === 0 ? '' : '0412-000000' + (i + 1),
       address: i === 0 ? '' : 'Dirección de ejemplo ' + (i + 1),
-      zone: 'Centro',
+      zoneId: zone.id,
       sellerId: users.vendedor.id,
       active: true,
       geo:
@@ -106,7 +107,7 @@ for (const [i, name] of ['Burger Point', 'Hot Dog House', 'Fast Grill', 'Urban B
               capturedAt: new Date().toISOString(),
               confirmed: true,
             },
-      slots: [0, 1, 2, 3, 4, 5, 6].map((day) => ({ day, start: '08:00', end: '18:00' })),
+      visitDays: [1, 2, 3, 4, 5, 6, 0],
       recurrence: 'semanal',
       recurrenceStart: date,
     },

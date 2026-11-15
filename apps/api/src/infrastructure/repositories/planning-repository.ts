@@ -10,7 +10,7 @@ import { D1Repository, count } from './d1-repository';
 
 type RouteRow = Omit<Route, 'stops' | 'recurrence'> & { recurrenceJson: string | null };
 const routeSelect =
-  'SELECT r.id,r.name,r.date,r.seller_id sellerId,u.name sellerName,r.series_id seriesId,r.recurrence_json recurrenceJson FROM routes r JOIN user u ON u.id=r.seller_id';
+  "SELECT r.id,r.name,r.date,r.seller_id sellerId,u.name sellerName,r.series_id seriesId,r.recurrence_json recurrenceJson,r.zone_id zoneId,coalesce(z.name,'') zone FROM routes r JOIN user u ON u.id=r.seller_id LEFT JOIN zones z ON z.id=r.zone_id";
 
 const visitSelect =
   'SELECT v.id,v.client_id clientId,c.name clientName,v.seller_id sellerId,u.name sellerName,v.scheduled_at scheduledAt,v.status,v.notes,v.order_id orderId,EXISTS(SELECT 1 FROM orders o WHERE o.id=v.order_id AND o.deleted_at IS NOT NULL) orderDeleted,v.route_id routeId FROM visits v JOIN clients c ON c.id=v.client_id JOIN user u ON u.id=v.seller_id';
@@ -69,7 +69,7 @@ export class D1PlanningRepository extends D1Repository implements PlanningReposi
       statements.push(
         this.db
           .prepare(
-            'UPDATE routes SET name=?,seller_id=?,date=?,series_id=?,recurrence_json=? WHERE id=?',
+            'UPDATE routes SET name=?,seller_id=?,date=?,series_id=?,recurrence_json=?,zone_id=? WHERE id=?',
           )
           .bind(
             first.input.name,
@@ -77,6 +77,7 @@ export class D1PlanningRepository extends D1Repository implements PlanningReposi
             first.input.date,
             first.seriesId,
             first.recurrence ? JSON.stringify(first.recurrence) : null,
+            first.input.zoneId,
             editingId,
           ),
       );
@@ -88,6 +89,7 @@ export class D1PlanningRepository extends D1Repository implements PlanningReposi
         name: route.input.name,
         sellerId: route.input.sellerId,
         date: route.input.date,
+        zoneId: route.input.zoneId,
         seriesId: route.seriesId,
         recurrence: route.recurrence ? JSON.stringify(route.recurrence) : null,
       }));
@@ -96,7 +98,7 @@ export class D1PlanningRepository extends D1Repository implements PlanningReposi
       statements.push(
         this.db
           .prepare(
-            "INSERT INTO routes(id,name,seller_id,date,series_id,recurrence_json,created_by,created_at) SELECT json_extract(value,'$.id'),json_extract(value,'$.name'),json_extract(value,'$.sellerId'),json_extract(value,'$.date'),json_extract(value,'$.seriesId'),json_extract(value,'$.recurrence'),?,? FROM json_each(?)",
+            "INSERT INTO routes(id,name,seller_id,date,series_id,recurrence_json,zone_id,created_by,created_at) SELECT json_extract(value,'$.id'),json_extract(value,'$.name'),json_extract(value,'$.sellerId'),json_extract(value,'$.date'),json_extract(value,'$.seriesId'),json_extract(value,'$.recurrence'),json_extract(value,'$.zoneId'),?,? FROM json_each(?)",
           )
           .bind(this.actorId, first.at, JSON.stringify(newRoutes)),
       );

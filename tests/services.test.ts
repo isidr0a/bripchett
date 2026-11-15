@@ -5,6 +5,7 @@ import type {
   CatalogRepository,
   ManagementRepository,
 } from '../apps/api/src/application/ports';
+import { ZoneService } from '../apps/api/src/application/services/zone-service';
 import { CatalogService } from '../apps/api/src/application/services/catalog-service';
 import { ManagementService } from '../apps/api/src/application/services/management-service';
 
@@ -21,6 +22,7 @@ function catalogRepository() {
   return {
     findClient: vi.fn<CatalogRepository['findClient']>(),
     listClients: vi.fn<CatalogRepository['listClients']>(),
+    zoneImpact: vi.fn<CatalogRepository['zoneImpact']>(),
     sellerExists: vi.fn<CatalogRepository['sellerExists']>(),
     createClient: vi.fn<CatalogRepository['createClient']>(),
     updateClient: vi.fn<CatalogRepository['updateClient']>(),
@@ -42,15 +44,23 @@ describe('Servicios independientes de HTTP y D1', () => {
       ...clientSchema.parse({
         name: 'Negocio ajeno',
         sellerId: 'seller-b',
+        zoneId: 'zone',
         recurrenceStart: '2026-01-01',
       }),
       id: 'client',
+      zone: 'Centro',
       code: 'CLI-TEST',
       sellerName: null,
       updatedAt: '2026-01-01T00:00:00Z',
     };
     repository.findClient.mockResolvedValue(client);
-    await expect(new CatalogService(repository, actor).client(client.id)).rejects.toMatchObject({
+    await expect(
+      new CatalogService(
+        repository,
+        actor,
+        new ZoneService({ list: vi.fn(), find: vi.fn(), save: vi.fn() }),
+      ).client(client.id),
+    ).rejects.toMatchObject({
       status: 404,
       code: 'CLIENT_NOT_FOUND',
     });

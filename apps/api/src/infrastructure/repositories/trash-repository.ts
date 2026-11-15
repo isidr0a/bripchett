@@ -8,6 +8,7 @@ import type { Pagination, RestoreVisit, TrashRepository } from '../../applicatio
 import { D1Repository, count } from './d1-repository';
 
 const resources = {
+  zones: { table: 'zones', label: 't.name', context: 'NULL', entity: 'zona' },
   users: { table: 'user', label: 't.name', context: 't.username', entity: 'usuario' },
   clients: { table: 'clients', label: 't.name', context: 't.code', entity: 'cliente' },
   products: { table: 'products', label: 't.name', context: 't.sku', entity: 'producto' },

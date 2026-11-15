@@ -1,3 +1,4 @@
+import type { ZoneService } from './zone-service';
 import {
   recurringRouteDates,
   type RouteInput,
@@ -17,6 +18,7 @@ export class PlanningService {
     private readonly orders: OrderRepository,
     private readonly catalog: CatalogService,
     private readonly actor: SessionUser,
+    private readonly zones: ZoneService,
   ) {}
 
   routes(pagination: Pagination) {
@@ -46,13 +48,17 @@ export class PlanningService {
         'ROUTE_SERIES',
         'Esta ruta ya pertenece a una repetición. Puedes editar esta fecha o crear otra repetición.',
       );
+    const zone = await this.zones.requireActive(input.zoneId);
     await this.catalog.requireSeller(input.sellerId);
     const clients = await Promise.all(
       input.stops.map((stop) => this.catalog.client(stop.clientId, true)),
     );
-    for (const client of clients)
+    for (const client of clients) {
       if (client.sellerId !== input.sellerId)
         fail(422, 'ROUTE_CLIENT', 'Todas las paradas deben pertenecer al vendedor de la ruta.');
+      if (client.zoneId !== input.zoneId)
+        fail(422, 'ROUTE_ZONE', 'Todas las paradas deben pertenecer a la zona de la ruta.');
+    }
     const id = existingId || uid();
     const dates = recurringRouteDates(input.date, input.recurrence);
     if (!dates.length) fail(422, 'ROUTE_RECURRENCE', 'Revisa las fechas de repetición de la ruta.');
@@ -73,7 +79,7 @@ export class PlanningService {
           fail(
             422,
             'VISIT_WINDOW',
-            `${clients[position].name}: la visita del ${date} a las ${stop.time} no coincide con sus días, horario o recurrencia. No se guardó ninguna fecha.`,
+            `${clients[position].name}: la visita del ${date} a las ${stop.time} no coincide con sus días permitidos o recurrencia. No se guardó ninguna fecha.`,
           );
         }
         return {
@@ -86,7 +92,15 @@ export class PlanningService {
       }),
     }));
     await this.repository.saveRoutes(routes, existingId);
-    return { id, ...input, seriesId, recurrence, occurrences: routes.length, dates };
+    return {
+      id,
+      ...input,
+      zone: zone.name,
+      seriesId,
+      recurrence,
+      occurrences: routes.length,
+      dates,
+    };
   }
   async scheduleVisit(input: VisitInput) {
     const scheduledAt = new Date(input.scheduledAt).toISOString();

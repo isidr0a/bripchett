@@ -2,13 +2,19 @@
 import type { Client } from '@briochett/contracts';
 import AppPagination from './AppPagination.vue';
 import { useClientSelector } from '../../application/composables/useClientSelector';
+const props = defineProps<{ zoneId?: string; sellerId?: string }>();
 const emit = defineEmits<{ select: [client: Client] }>();
-const { q, page, data, busy, error, listId, load } = useClientSelector();
+const { q, page, data, busy, error, listId, load } = useClientSelector(props);
 </script>
 <template>
   <div class="stack">
     <p class="muted">
-      Busca por nombre comercial, código o RIF. Solo aparecen clientes activos de tu alcance.
+      Busca por nombre comercial, código o RIF.
+      {{
+        zoneId
+          ? 'Solo aparecen clientes activos de la zona y el vendedor de la ruta.'
+          : 'Solo aparecen clientes activos de tu alcance.'
+      }}
     </p>
     <label
       >Buscar cliente<input
@@ -36,7 +42,7 @@ const { q, page, data, busy, error, listId, load } = useClientSelector();
         <strong>{{ client.name }}</strong
         ><span>{{ client.code }} · {{ client.rif || 'RIF pendiente' }}</span
         ><small
-          >{{ client.zone || 'Sin zona' }} ·
+          >{{ client.zone || 'Zona pendiente' }} ·
           {{ client.sellerName || 'Sin vendedor asignado' }}</small
         >
       </button>

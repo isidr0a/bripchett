@@ -27,10 +27,22 @@ import type {
   TrashEntry,
   Visit,
   VisitResultInput,
+  Zone,
+  ZoneInput,
+  ZoneImpact,
 } from '@briochett/contracts';
 
 export type Pagination = { page: number; pageSize: number; offset: number };
-export type ClientSearch = Pagination & { sellerId?: string; active: boolean; search?: string };
+export type ClientSearch = Pagination & {
+  sellerId?: string;
+  zoneId?: string;
+  active: boolean;
+  search?: string;
+};
+export type PendingZoneStop = ZoneImpact['stops'][number] & {
+  routeZoneId: string;
+  sellerId: string;
+};
 export type ProductSearch = Pagination & { active: boolean };
 export type IdempotentOrder = { id: string; requestHash: string; deletedAt: string | null };
 export type OrderRecord = Order & { clientSnapshot: Client };
@@ -90,13 +102,15 @@ export interface CatalogRepository {
   findClient(id: string): Promise<Client | null>;
   listClients(query: ClientSearch): Promise<Page<Client>>;
   sellerExists(id: string): Promise<boolean>;
+  zoneImpact(id: string, zoneId: string): Promise<PendingZoneStop[]>;
   createClient(id: string, code: string, input: ClientInput, at: string): Promise<void>;
   updateClient(
     id: string,
     input: ClientInput,
     geoUpdatedBy: string | null,
     at: string,
-  ): Promise<void>;
+    expected: { updatedAt: string; pending: PendingZoneStop[] },
+  ): Promise<boolean>;
   completeClient(
     id: string,
     input: CompletionInput,
@@ -164,4 +178,10 @@ export interface TrashRepository {
   remove(type: TrashType, id: string, scope: DeletionScope, at: string): Promise<number | null>;
   restoreVisits(type: 'routes' | 'visits', id: string): Promise<RestoreVisit[]>;
   restore(type: TrashType, id: string, clientVersions: Record<string, string>): Promise<boolean>;
+}
+
+export interface ZoneRepository {
+  list(pagination: Pagination, active: boolean, search: string): Promise<Page<Zone>>;
+  find(id: string): Promise<Zone | null>;
+  save(id: string, data: ZoneInput, key: string, at: string, editing: boolean): Promise<boolean>;
 }

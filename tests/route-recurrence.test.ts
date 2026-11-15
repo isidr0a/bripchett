@@ -26,6 +26,7 @@ describe('Calendario de rutas recurrentes', () => {
     const input = {
       name: 'Ruta de prueba',
       sellerId: 'seller',
+      zoneId: 'zone',
       date: '2027-01-04',
       stops: [{ clientId: 'client', time: '09:00' }],
     };

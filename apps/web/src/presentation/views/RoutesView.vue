@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ZonePicker from '../components/ZonePicker.vue';
 import DeleteRecord from '../components/DeleteRecord.vue';
 import { statusLabels } from '@briochett/contracts';
 import PageHeader from '../components/PageHeader.vue';
@@ -6,7 +7,7 @@ import AppPagination from '../components/AppPagination.vue';
 import AppModal from '../components/AppModal.vue';
 import ClientSelector from '../components/ClientSelector.vue';
 import OrderWizard from '../components/OrderWizard.vue';
-import { dateTime, visitSlotTime } from '../../shared/formatters';
+import { dateTime } from '../../shared/formatters';
 import { useRoutes } from '../../application/composables/useRoutes';
 const {
   auth,
@@ -24,6 +25,7 @@ const {
   form,
   repeatEnabled,
   editingSeries,
+  fixedZone,
   plannedDates,
   editingRouteId,
   scheduled,
@@ -65,7 +67,7 @@ const {
       <article v-for="r in routes.data.value.items" :key="r.id" class="card stack">
         <div>
           <h2>{{ r.name }}</h2>
-          <p class="muted">{{ r.date }} · {{ r.sellerName }}</p>
+          <p class="muted">{{ r.date }} · {{ r.sellerName }} · {{ r.zone || 'Zona pendiente' }}</p>
           <p v-if="r.recurrence" class="small">
             <span class="badge">Recurrente · {{ statusLabels[r.recurrence.frequency] }}</span>
             <span class="muted"> Hasta {{ r.recurrence.until }}</span>
@@ -176,9 +178,11 @@ const {
     ><p v-if="error" class="notice error" role="alert">{{ error }}</p>
     <template v-if="modal === 'route'"
       ><div v-if="selecting" class="stack">
-        <ClientSelector @select="addStop" /><button class="secondary" @click="selecting = false">
-          Volver a la ruta
-        </button>
+        <ClientSelector
+          :zone-id="form.zoneId"
+          :seller-id="form.sellerId"
+          @select="addStop"
+        /><button class="secondary" @click="selecting = false">Volver a la ruta</button>
       </div>
       <form v-else class="stack" @submit.prevent="saveRoute">
         <label>Nombre de la ruta<input v-model="form.name" required maxlength="100" /></label>
@@ -190,6 +194,15 @@ const {
             </select></label
           ><label>Fecha de visitas<input v-model="form.date" type="date" required /></label>
         </div>
+        <p v-if="fixedZone" class="notice">
+          Zona de la serie: <strong>{{ form.zoneName }}</strong>
+        </p>
+        <ZonePicker
+          v-else
+          v-model="form.zoneId"
+          v-model:name="form.zoneName"
+          @update:model-value="form.stops = []"
+        />
         <p v-if="editingSeries" class="notice">
           Esta ruta pertenece a una repetición {{ editingSeries.frequency }} hasta el
           {{ editingSeries.until }}. Los cambios afectan solo a esta fecha; las otras visitas y sus
@@ -218,8 +231,8 @@ const {
               primer lunes. Si un mes no tiene esa fecha, se omite.
             </p>
             <p class="muted small">
-              Se crearán recorridos independientes con el mismo vendedor, orden y horas. Planifica
-              hasta un año desde la primera fecha.
+              Se crearán recorridos independientes con la misma zona, vendedor, orden y horas.
+              Planifica hasta un año desde la primera fecha.
             </p>
             <div v-if="plannedDates.length > 1" class="notice" role="status">
               <strong
@@ -238,8 +251,8 @@ const {
           </template>
         </fieldset>
         <p class="muted small">
-          Las paradas deben respetar los días, horarios y recurrencia de cada negocio. Puedes
-          cambiar su orden.
+          Selecciona clientes de la zona y el vendedor de la ruta. Las paradas respetan los días
+          permitidos y la recurrencia de cada negocio.
         </p>
         <div v-for="(s, i) in form.stops" :key="s.clientId" class="stop-editor">
           <strong>{{ i + 1 }}. {{ s.clientName }}</strong
@@ -269,7 +282,7 @@ const {
         <button
           type="button"
           class="secondary"
-          :disabled="!form.sellerId"
+          :disabled="!form.sellerId || !form.zoneId"
           @click="selecting = true"
         >
           Agregar cliente a la ruta</button
@@ -289,17 +302,17 @@ const {
       <form v-else class="stack" @submit.prevent="saveVisit">
         <h3>{{ client.name }}</h3>
         <p class="muted">{{ client.recurrence }} · Desde {{ client.recurrenceStart }}</p>
-        <p v-for="(s, i) in client.slots" :key="i" class="small">
-          {{ days[s.day] }}: {{ visitSlotTime(s) }}
+        <p v-if="client.visitDays.length" class="small">
+          {{ client.visitDays.map((day) => days[day]).join(', ') }} · Cualquier hora
         </p>
-        <p v-if="!client.slots.length" class="notice">
-          Administración debe configurar los horarios de este cliente.
+        <p v-else class="notice">
+          Administración debe configurar los días permitidos de este cliente.
         </p>
         <label
           >Fecha y hora de la visita<input v-model="scheduled" type="datetime-local" required
         /></label>
         <div class="actions">
-          <button :disabled="busy || !client.slots.length">
+          <button :disabled="busy || !client.visitDays.length">
             {{ busy ? 'Guardando…' : 'Programar visita' }}</button
           ><button class="secondary" type="button" @click="client = null">Cambiar cliente</button>
         </div>

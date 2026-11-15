@@ -2,6 +2,8 @@ import { z } from 'zod';
 import {
   trashTypes,
   clientSchema,
+  sellerClientSchema,
+  zoneSchema,
   completionSchema,
   productSchema,
   rateSchema,
@@ -59,10 +61,11 @@ function operation(path: string, method: string, summary: string, schema?: z.Zod
   };
 }
 for (const [path, label, schema] of [
-  ['clients', 'Clientes', clientSchema],
+  ['clients', 'Clientes', z.union([clientSchema, sellerClientSchema])],
   ['products', 'Productos', productSchema],
   ['users', 'Usuarios', userSchema],
   ['rates', 'Tasas', rateSchema],
+  ['zones', 'Zonas comerciales', zoneSchema],
   ['routes', 'Rutas', routeSchema],
   ['visits', 'Visitas', visitSchema],
   ['orders', 'Pedidos', orderSchema],
@@ -71,7 +74,53 @@ for (const [path, label, schema] of [
   operation('/api/v1/' + path, 'post', 'Crear ' + label, schema);
 }
 operation('/api/v1/clients/{id}', 'get', 'Consultar cliente');
-operation('/api/v1/clients/{id}', 'patch', 'Actualizar cliente', clientSchema);
+operation(
+  '/api/v1/clients/{id}',
+  'patch',
+  'Actualizar cliente; zoneImpactRevision es obligatoria si hay paradas que retirar',
+  clientSchema,
+);
+operation(
+  '/api/v1/clients/{id}/zone-impact',
+  'get',
+  'Revisar paradas y recorridos afectados por un cambio de zona (solo Administración)',
+);
+paths['/api/v1/clients/{id}/zone-impact'].get.parameters?.push({
+  name: 'zoneId',
+  in: 'query',
+  required: true,
+  schema: { type: 'string' },
+});
+paths['/api/v1/clients/{id}/zone-impact'].get.responses[200].content = {
+  'application/json': {
+    schema: z.toJSONSchema(
+      z.object({
+        revision: z.string(),
+        stops: z.array(
+          z.object({
+            visitId: z.string(),
+            routeId: z.string(),
+            routeName: z.string(),
+            scheduledAt: z.iso.datetime(),
+            archivesRoute: z.union([z.literal(0), z.literal(1)]),
+          }),
+        ),
+      }),
+    ),
+  },
+};
+operation(
+  '/api/v1/zones/{id}',
+  'patch',
+  'Renombrar, activar o desactivar una zona (solo Administración)',
+  zoneSchema,
+);
+paths['/api/v1/zones'].get.parameters = ['q', 'page', 'active'].map((name) => ({
+  name,
+  in: 'query',
+  schema: { type: 'string' },
+}));
+
 operation(
   '/api/v1/clients/{id}/completion',
   'patch',
@@ -100,11 +149,13 @@ operation(
 );
 for (const name of ['dashboard', 'reports', 'sellers', 'audit', 'integration/a2'])
   operation('/api/v1/' + name, 'get', 'Consultar ' + name);
-paths['/api/v1/clients'].get.parameters = ['q', 'page', 'active'].map((name) => ({
-  name,
-  in: 'query',
-  schema: { type: 'string' },
-}));
+paths['/api/v1/clients'].get.parameters = ['q', 'page', 'active', 'zoneId', 'sellerId'].map(
+  (name) => ({
+    name,
+    in: 'query',
+    schema: { type: 'string' },
+  }),
+);
 paths['/api/v1/reports'].get.parameters = ['from', 'to', 'sellerId'].map((name) => ({
   name,
   in: 'query',

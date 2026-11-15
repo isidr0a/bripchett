@@ -8,6 +8,7 @@ export type DeleteTarget = { type: TrashType; id: string; label: string; recurri
 
 export const trashLabels: Record<TrashType, string> = {
   users: 'Usuarios',
+  zones: 'Zonas',
   clients: 'Clientes',
   products: 'Productos',
   rates: 'Tasas',

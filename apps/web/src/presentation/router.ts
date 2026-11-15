@@ -15,6 +15,7 @@ const routes = [
     'configuracion',
     'cuenta',
     'papelera',
+    'zonas',
   ].map((name) => ({
     path: '/' + name,
     component: (
@@ -28,6 +29,7 @@ const routes = [
         usuarios: () => import('./views/UsersView.vue'),
         reportes: () => import('./views/ReportsView.vue'),
         configuracion: () => import('./views/SettingsView.vue'),
+        zonas: () => import('./views/ZonesView.vue'),
         papelera: () => import('./views/TrashView.vue'),
         cuenta: () => import('./views/AccountView.vue'),
       } as Record<string, () => Promise<unknown>>

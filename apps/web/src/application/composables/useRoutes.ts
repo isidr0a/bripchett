@@ -30,10 +30,13 @@ export function useRoutes() {
     wizard = ref<{ clientId: string; visitId: string } | null>(null);
   const editingRouteId = ref<string | null>(null),
     editingSeries = ref<Route['recurrence']>(null),
+    fixedZone = ref(false),
     repeatEnabled = ref(false);
   const form = reactive({
       name: '',
       sellerId: '',
+      zoneId: '',
+      zoneName: '',
       date: today(),
       frequency: 'semanal' as RouteFrequency,
       until: addCalendarDays(today(), 28),
@@ -79,10 +82,13 @@ export function useRoutes() {
   function openRoute() {
     editingRouteId.value = null;
     editingSeries.value = null;
+    fixedZone.value = false;
     repeatEnabled.value = false;
     Object.assign(form, {
       name: '',
       sellerId: '',
+      zoneId: '',
+      zoneName: '',
       date: today(),
       frequency: 'semanal',
       until: addCalendarDays(today(), 28),
@@ -98,6 +104,10 @@ export function useRoutes() {
     modal.value = 'schedule';
   }
   function addStop(c: Client) {
+    if (c.zoneId !== form.zoneId) {
+      error.value = 'Este cliente no pertenece a la zona seleccionada.';
+      return;
+    }
     if (c.sellerId !== form.sellerId) {
       error.value = 'Este cliente no pertenece al vendedor seleccionado.';
       return;
@@ -119,6 +129,7 @@ export function useRoutes() {
     const input = routeSchema.safeParse({
       name: form.name,
       sellerId: form.sellerId,
+      zoneId: form.zoneId,
       date: form.date,
       recurrence: recurrence.value,
       stops: form.stops.map((s) => ({ clientId: s.clientId, time: s.time })),
@@ -179,10 +190,13 @@ export function useRoutes() {
   function editRoute(r: Route) {
     editingRouteId.value = r.id;
     editingSeries.value = r.recurrence;
+    fixedZone.value = !!r.seriesId && !!r.zoneId;
     repeatEnabled.value = false;
     Object.assign(form, {
       name: r.name,
       sellerId: r.sellerId,
+      zoneId: r.zoneId ?? '',
+      zoneName: r.zone,
       date: r.date,
       frequency: 'semanal',
       until: addCalendarDays(r.date, 28),
@@ -196,6 +210,7 @@ export function useRoutes() {
     editRoute(r);
     editingRouteId.value = null;
     editingSeries.value = null;
+    fixedZone.value = false;
     let date = addCalendarDays(r.date, 7);
     while (date < today()) date = addCalendarDays(date, 7);
     form.date = date;
@@ -246,6 +261,7 @@ export function useRoutes() {
     form,
     repeatEnabled,
     editingSeries,
+    fixedZone,
     plannedDates,
     editingRouteId,
     scheduled,

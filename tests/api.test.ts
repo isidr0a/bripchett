@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto';
 let mf: Miniflare, env: Bindings, db: D1Database;
 const cookies: Record<string, string> = {},
   users: Record<string, any> = {};
+let zoneId: string;
 let client: any, otherClient: any, incomplete: any, product: any;
 async function request(
   path: string,
@@ -64,7 +65,7 @@ const baseClient = (name: string, sellerId: string) => ({
   contact: 'Contacto de prueba',
   phone: '0000000000',
   address: 'Dirección ficticia',
-  zone: 'Centro',
+  zoneId,
   sellerId,
   active: true,
   geo: {
@@ -74,10 +75,59 @@ const baseClient = (name: string, sellerId: string) => ({
     capturedAt: new Date().toISOString(),
     confirmed: true,
   },
-  slots: [0, 1, 2, 3, 4, 5, 6].map((day) => ({ day, start: '08:00', end: '18:00' })),
+  visitDays: [0, 1, 2, 3, 4, 5, 6],
   recurrence: 'semanal',
   recurrenceStart: '2026-01-01',
 });
+async function oldZoneFixtures() {
+  const at = '2026-05-01T13:00:00.000Z';
+  await db
+    .prepare(
+      "INSERT INTO user(id,name,email,role,createdAt,updatedAt) VALUES('legacy-seller','Vendedor histórico','legacy@briochett.invalid','vendedor',0,0)",
+    )
+    .run();
+  for (const [id, zone, slots] of [
+    [
+      'legacy-a',
+      '  ÁREA   Norte  ',
+      [
+        { day: 1, start: '07:00', end: '08:00' },
+        { day: 1, start: '12:00', end: '14:00' },
+        { day: 3, start: '08:00', end: '17:00' },
+      ],
+    ],
+    ['legacy-b', 'área norte', []],
+    ['legacy-c', 'Sur histórico', [{ day: 1, start: '08:00', end: '16:00' }]],
+    ['legacy-none', '', []],
+  ] as const) {
+    await db
+      .prepare(
+        "INSERT INTO clients(id,code,name,zone,seller_id,slots_json,recurrence,recurrence_start,created_at,updated_at) VALUES(?,?,?,?,'legacy-seller',?,'quincenal','2026-04-27',?,?)",
+      )
+      .bind(id, id, id, zone, JSON.stringify(slots), at, at)
+      .run();
+  }
+  for (const id of ['legacy-same', 'legacy-mixed', 'legacy-unknown'])
+    await db
+      .prepare(
+        "INSERT INTO routes(id,name,seller_id,date,created_by,created_at) VALUES(?,?,'legacy-seller','2026-05-01','legacy-seller',?)",
+      )
+      .bind(id, id, at)
+      .run();
+  for (const [id, route, client, time, status] of [
+    ['legacy-v1', 'legacy-same', 'legacy-a', '2026-05-01T13:00:00.000Z', 'sin_pedido'],
+    ['legacy-v2', 'legacy-same', 'legacy-b', '2026-05-01T14:00:00.000Z', 'programada'],
+    ['legacy-v3', 'legacy-mixed', 'legacy-a', '2026-05-01T15:00:00.000Z', 'programada'],
+    ['legacy-v4', 'legacy-mixed', 'legacy-c', '2026-05-01T16:00:00.000Z', 'programada'],
+    ['legacy-v5', 'legacy-unknown', 'legacy-none', '2026-05-01T17:00:00.000Z', 'programada'],
+  ])
+    await db
+      .prepare(
+        "INSERT INTO visits(id,route_id,client_id,seller_id,scheduled_at,status,created_at) VALUES(?,?,?,'legacy-seller',?,?,?)",
+      )
+      .bind(id, route, client, time, status, at)
+      .run();
+}
 beforeAll(async () => {
   mf = new Miniflare(
     convertV4MiniflareOptions({
@@ -102,7 +152,9 @@ beforeAll(async () => {
     '0003_recurring_routes.sql',
     '0004_route_series_guard.sql',
     '0005_soft_delete.sql',
+    '0006_commercial_zones.sql',
   ]) {
+    if (file === '0006_commercial_zones.sql') await oldZoneFixtures();
     const sql = await readFile(new URL('../apps/api/migrations/' + file, import.meta.url), 'utf8');
     const lines = sql.split('\n'),
       statements: string[] = [];
@@ -130,6 +182,8 @@ beforeAll(async () => {
     ['supervision', 'Supervisión'],
   ])
     await createUser(role, name);
+  zoneId = (await request('/api/v1/zones', 'administracion', 'POST', { name: 'Centro' })).body.id;
+  expect(zoneId).toBeTruthy();
   client = (
     await request(
       '/api/v1/clients',
@@ -504,6 +558,7 @@ describe('Rutas recurrentes', () => {
     return {
       name,
       sellerId,
+      zoneId,
       date: '2027-01-04',
       stops: [{ clientId: customer.body.id, time: '09:00' }],
     };
@@ -736,11 +791,12 @@ describe('Rutas, visitas, reportes e integración', () => {
   it('guarda cualquier horario y permite visitas al final del día seleccionado', async () => {
     const created = await request('/api/v1/clients', 'administracion', 'POST', {
       ...baseClient('Disponibilidad de día completo', users.vendedor.id),
-      slots: [{ day: 1, allDay: true, start: '00:00', end: '23:59' }],
+      visitDays: [1],
     });
     expect(created.status).toBe(201);
     const saved = await request('/api/v1/clients/' + created.body.id, 'vendedor');
-    expect(saved.body.slots[0].allDay).toBe(true);
+    expect(saved.body.visitDays).toEqual([1]);
+    expect(saved.body.slots).toBeUndefined();
     const schedule = (at: string) =>
       request('/api/v1/visits', 'vendedor', 'POST', {
         clientId: created.body.id,
@@ -749,9 +805,9 @@ describe('Rutas, visitas, reportes e integración', () => {
     expect((await schedule('2026-11-03T03:59:00Z')).status).toBe(201);
     expect((await schedule('2026-11-03T04:00:00Z')).status).toBe(422);
   });
-  it('respeta horarios y recurrencia en Caracas', () => {
+  it('respeta los días y la recurrencia en Caracas', () => {
     expect(visitFits(client, '2026-11-02T13:00:00Z')).toBe(true);
-    expect(visitFits(client, '2026-11-02T02:00:00Z')).toBe(false);
+    expect(visitFits({ ...client, visitDays: [1] }, '2026-11-02T02:00:00Z')).toBe(false);
     expect(
       visitFits(
         { ...client, recurrence: 'quincenal', recurrenceStart: '2026-11-02' },
@@ -763,6 +819,7 @@ describe('Rutas, visitas, reportes e integración', () => {
     const body = {
       name: 'Ruta de prueba',
       sellerId: users.vendedor.id,
+      zoneId,
       date: '2026-11-03',
       stops: [
         { clientId: client.id, time: '09:00' },
@@ -815,6 +872,7 @@ describe('Rutas, visitas, reportes e integración', () => {
     const body = {
       name: 'Ruta editable',
       sellerId: users.vendedor.id,
+      zoneId,
       date: '2030-11-06',
       stops: [{ clientId: client.id, time: '09:00' }],
     };
@@ -937,13 +995,14 @@ it('busca y pagina 10.000 clientes sin exponer otra asignación', async () => {
       const n = i + j;
       return db
         .prepare(
-          'INSERT INTO clients(id,code,name,seller_id,recurrence_start,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',
+          'INSERT INTO clients(id,code,name,seller_id,zone_id,recurrence_start,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',
         )
         .bind(
           'mass-' + n,
           'MASS-' + String(n).padStart(5, '0'),
           'Negocio ' + String(n).padStart(5, '0'),
           n % 2 ? users.vendedor.id : users.second.id,
+          zoneId,
           '2026-01-01',
           new Date().toISOString(),
           new Date().toISOString(),
@@ -1158,6 +1217,7 @@ describe('Papelera y borrado lógico', () => {
       name,
       date,
       sellerId: users.vendedor.id,
+      zoneId,
       recurrence: { frequency: 'semanal', until: '2028-11-20' },
       stops: clients.map(({ id }, i) => ({ clientId: id, time: i ? '10:00' : '09:00' })),
     };
@@ -1206,7 +1266,7 @@ describe('Papelera y borrado lógico', () => {
     const { id: clientId, input } = clients[0];
     const update = (data: unknown) =>
       request('/api/v1/clients/' + clientId, 'administracion', 'PATCH', data);
-    expect((await update({ ...input, slots: [] })).status).toBe(200);
+    expect((await update({ ...input, visitDays: [] })).status).toBe(200);
     expect((await restore('routes', id)).body.error.code).toBe('TRASH_RESTORE_DEPENDENCY');
     expect((await update(input)).status).toBe(200);
     expect((await restore('routes', id)).status).toBe(200);
@@ -1248,5 +1308,240 @@ describe('Papelera y borrado lógico', () => {
     expect(saved?.deleted_at ? saved.status === 'programada' : saved?.status === 'sin_pedido').toBe(
       true,
     );
+  });
+});
+
+describe('Zonas comerciales', () => {
+  const call = (path: string, method = 'GET', payload?: unknown, role = 'administracion') =>
+    request('/api/v1/' + path, role, method, payload);
+  const newZone = async (name: string, active = true) => {
+    const res = await call('zones', 'POST', { name, active });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    return res.body.id as string;
+  };
+  const customer = async (name: string, zone = zoneId) => {
+    const input = { ...baseClient(name, users.vendedor.id), zoneId: zone };
+    const res = await call('clients', 'POST', input);
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    return { id: res.body.id as string, input };
+  };
+  async function route(name: string, date: string, ids: string[], zone = zoneId) {
+    const input = {
+      name,
+      date,
+      zoneId: zone,
+      sellerId: users.vendedor.id,
+      stops: ids.map((clientId, i) => ({ clientId, time: '0' + (i + 7) + ':00' })),
+    };
+    const res = await call('routes', 'POST', input);
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    const stops = (
+      await db
+        .prepare(
+          'SELECT id,client_id clientId FROM visits WHERE route_id=? ORDER BY route_position',
+        )
+        .bind(res.body.id)
+        .all<{ id: string; clientId: string }>()
+    ).results;
+    return { id: res.body.id as string, input, stops };
+  }
+  it('migra zonas en mayúsculas y con espacios, días únicos y rutas históricas', async () => {
+    const a = (await call('clients/legacy-a')).body;
+    const b = (await call('clients/legacy-b')).body;
+    expect(a.zoneId).toBeTruthy();
+    expect(b.zoneId).toBe(a.zoneId);
+    expect(a.zone).toMatch(/^área norte$/i);
+    expect(a.visitDays).toEqual([1, 3]);
+    expect(a.recurrence).toBe('quincenal');
+    expect(b.visitDays).toEqual([]);
+    expect((await call('clients/legacy-none')).body.zoneId).toBeNull();
+    const migrated = (
+      await db
+        .prepare("SELECT id,zone_id zoneId FROM routes WHERE id LIKE 'legacy-%' ORDER BY id")
+        .all()
+    ).results;
+    expect(migrated).toEqual([
+      { id: 'legacy-mixed', zoneId: null },
+      { id: 'legacy-same', zoneId: a.zoneId },
+      { id: 'legacy-unknown', zoneId: null },
+    ]);
+    expect((await call('visits/legacy-v1')).body).toMatchObject({
+      status: 'sin_pedido',
+      scheduledAt: '2026-05-01T13:00:00.000Z',
+      routeId: 'legacy-same',
+    });
+  });
+  it('restringe gestión a Administración, conserva nombres únicos y restaura desde Papelera', async () => {
+    const id = await newZone('  Zona   de prueba  ');
+    const unused = await newZone('Oculta para vendedores', false);
+    expect((await call('zones', 'POST', { name: 'ZONA DE PRUEBA' })).body.error.code).toBe(
+      'ZONE_NAME_EXISTS',
+    );
+    for (const role of ['vendedor', 'supervision', 'preparacion']) {
+      expect((await call('zones', 'POST', { name: 'No permitido' }, role)).status).toBe(403);
+      expect((await call('zones/' + id, 'PATCH', { name: 'No permitido' }, role)).status).toBe(403);
+      expect((await call('zones/' + id, 'DELETE', undefined, role)).status).toBe(403);
+    }
+    expect((await call('zones?q=oculta', 'GET', undefined, 'vendedor')).body.items).toEqual([]);
+    expect((await call('zones?q=oculta')).body.items.map((z: any) => z.id)).toEqual([unused]);
+    expect((await call('zones/' + id, 'DELETE')).body.affected).toBe(1);
+    expect((await call('trash?type=zones')).body.items).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id, label: 'Zona de prueba' })]),
+    );
+    expect((await call('trash/zones/' + id + '/restore', 'POST')).status).toBe(200);
+    const renamed = await call('zones/' + id, 'PATCH', { name: 'Restaurada', active: true });
+    expect(renamed.body.name).toBe('Restaurada');
+    expect(
+      (await call('zones/' + zoneId, 'PATCH', { name: 'Centro', active: false })).body.error.code,
+    ).toBe('ZONE_DEPENDENCIES');
+    expect((await call('zones/' + zoneId, 'DELETE')).body.error.code).toBe('ZONE_DEPENDENCIES');
+  });
+  it('permite alta completa al vendedor y no permite alterar asignación ni agenda', async () => {
+    const otherZone = await newZone('Alta Vendedor');
+    const { name, rif, contact, phone, address, geo } = baseClient(
+      'Alta exclusiva vendedor',
+      users.vendedor.id,
+    );
+    const input = { name, rif, contact, phone, address, geo, zoneId: otherZone };
+    for (const invalid of [
+      { ...input, geo: null },
+      { ...input, geo: { ...geo, confirmed: false } },
+      { ...input, rif: '' },
+      { ...input, zoneId: '' },
+      { ...input, sellerId: users.second.id },
+      { ...input, active: false },
+      { ...input, visitDays: [] },
+    ])
+      expect((await call('clients', 'POST', invalid, 'vendedor')).status).toBe(422);
+    for (const role of ['supervision', 'preparacion'])
+      expect((await call('clients', 'POST', input, role)).status).toBe(403);
+    const res = await call('clients', 'POST', input, 'vendedor');
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(res.body).toMatchObject({
+      zoneId: otherZone,
+      sellerId: users.vendedor.id,
+      active: true,
+      recurrence: 'semanal',
+      visitDays: [1, 2, 3, 4, 5, 6, 0],
+      geoUpdatedBy: users.vendedor.id,
+    });
+    expect(
+      (await call('clients/' + res.body.id, 'PATCH', { ...res.body, zoneId }, 'vendedor')).status,
+    ).toBe(403);
+    expect(
+      (
+        await call(
+          'clients/' + res.body.id + '/zone-impact?zoneId=' + zoneId,
+          'GET',
+          undefined,
+          'vendedor',
+        )
+      ).status,
+    ).toBe(403);
+    const filtered = (
+      await call(
+        'clients?zoneId=' + otherZone + '&sellerId=' + users.second.id,
+        'GET',
+        undefined,
+        'vendedor',
+      )
+    ).body;
+    expect(filtered.items.map((c: any) => c.id)).toEqual([res.body.id]);
+  });
+  it('filtra clientes por zona y vendedor, protege las series y actualiza la búsqueda al renombrar', async () => {
+    const south = await newZone('Sector Pradera');
+    const a = await customer('En Pradera', south);
+    const b = await customer('Fuera de Pradera');
+    const r = await route('Ruta pradera', '2029-02-01', [a.id], south);
+    expect(
+      (await call('routes', 'POST', { ...r.input, stops: [{ clientId: b.id, time: '08:00' }] }))
+        .body.error.code,
+    ).toBe('ROUTE_ZONE');
+    const allowed = (await call('clients?zoneId=' + south + '&sellerId=' + users.vendedor.id)).body;
+    expect(allowed.items.map((c: any) => c.id)).toEqual([a.id]);
+    expect(
+      (await call('zones/' + south, 'PATCH', { name: 'Llanura Naciente', active: true })).status,
+    ).toBe(200);
+    expect((await call('clients?q=Llanura%20Naciente')).body.items.map((c: any) => c.id)).toEqual([
+      a.id,
+    ]);
+    const recurring = await call('routes', 'POST', {
+      ...r.input,
+      date: '2029-02-08',
+      recurrence: { frequency: 'semanal', until: '2029-02-15' },
+    });
+    expect(recurring.status).toBe(201);
+    const members = (await call('routes')).body.items.filter(
+      (item: any) => item.seriesId === recurring.body.id,
+    );
+    expect(members.map((item: any) => item.zoneId)).toEqual([south, south]);
+    expect(
+      (
+        await call('routes/' + recurring.body.id, 'PATCH', {
+          ...r.input,
+          zoneId,
+          stops: [{ clientId: b.id, time: '08:00' }],
+          date: '2029-02-08',
+        })
+      ).body.error.code,
+    ).toBe('ROUTE_SERIES_ZONE');
+  });
+  it('exige la revisión vigente, conserva visitas independientes y realizadas y retira recorridos vacíos', async () => {
+    const target = await newZone('Destino de traslado');
+    const moving = await customer('Cliente que cambia de zona');
+    const stays = await customer('Cliente que permanece');
+    const alone = await route('Recorrido que queda vacío', '2029-04-02', [moving.id]);
+    const shared = await route('Recorrido con historia', '2029-04-03', [moving.id, stays.id]);
+    expect(
+      (
+        await call('visits/' + shared.stops[1].id + '/result', 'POST', {
+          result: 'sin_pedido',
+          notes: 'Realizada',
+        })
+      ).status,
+    ).toBe(200);
+    const independent = await call('visits', 'POST', {
+      clientId: moving.id,
+      scheduledAt: '2029-04-04T22:57:00Z',
+    });
+    expect(independent.status).toBe(201);
+    const update = (revision?: string) =>
+      call('clients/' + moving.id, 'PATCH', {
+        ...moving.input,
+        zoneId: target,
+        zoneImpactRevision: revision,
+      });
+    const preview = () => call('clients/' + moving.id + '/zone-impact?zoneId=' + target);
+    expect((await update()).body.error.code).toBe('ZONE_IMPACT_CHANGED');
+    const first = (await preview()).body;
+    expect(first.stops).toHaveLength(2);
+    expect(first.stops.find((stop: any) => stop.routeId === alone.id).archivesRoute).toBe(1);
+    expect((await call('clients/' + moving.id)).body.zoneId).toBe(zoneId);
+    const concurrent = await route('Nueva parada antes de confirmar', '2029-04-05', [
+      moving.id,
+      stays.id,
+    ]);
+    expect((await update(first.revision)).body.error.code).toBe('ZONE_IMPACT_CHANGED');
+    const latest = (await preview()).body;
+    expect(latest.stops).toHaveLength(3);
+    const moved = await update(latest.revision);
+    expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+    expect(moved.body.zoneId).toBe(target);
+    expect((await call('visits/' + independent.body.id)).status).toBe(200);
+    expect((await call('visits/' + shared.stops[1].id)).body.status).toBe('sin_pedido');
+    expect((await call('visits/' + shared.stops[0].id)).status).toBe(404);
+    expect((await call('visits/' + concurrent.stops[0].id)).status).toBe(404);
+    const deleted = (await call('trash?type=routes')).body.items;
+    expect(deleted.some((entry: any) => entry.id === alone.id)).toBe(true);
+    expect(deleted.some((entry: any) => entry.id === shared.id)).toBe(false);
+    expect((await call('trash/routes/' + alone.id + '/restore', 'POST')).body.error.code).toBe(
+      'ROUTE_ZONE',
+    );
+    expect(
+      (await call('trash/visits/' + shared.stops[0].id + '/restore', 'POST')).body.error.code,
+    ).toBe('ROUTE_ZONE');
+    expect((await call('clients/' + moving.id, 'PATCH', moving.input)).status).toBe(200);
+    expect((await call('trash/routes/' + alone.id + '/restore', 'POST')).status).toBe(200);
+    expect((await call('visits/' + alone.stops[0].id)).status).toBe(200);
   });
 });

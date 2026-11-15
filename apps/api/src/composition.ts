@@ -1,3 +1,5 @@
+import { ZoneService } from './application/services/zone-service';
+import { D1ZoneRepository } from './infrastructure/repositories/zone-repository';
 import { TrashService } from './application/services/trash-service';
 import { D1TrashRepository } from './infrastructure/repositories/trash-repository';
 import { IntegrationService } from './application/services/integration-service';
@@ -26,9 +28,11 @@ export function createServices(
   const catalogRepository = new D1CatalogRepository(env.DB, actor.id);
   const orderRepository = new D1OrderRepository(env.DB, actor.id);
   const planningRepository = new D1PlanningRepository(env.DB, actor.id);
-  const catalog = new CatalogService(catalogRepository, actor);
+  const zones = new ZoneService(new D1ZoneRepository(env.DB, actor.id));
+  const catalog = new CatalogService(catalogRepository, actor, zones);
   return {
     catalog,
+    zones,
     trash: new TrashService(new D1TrashRepository(env.DB, actor.id), catalog, actor),
     integration: new IntegrationService(new DisabledA2Gateway(), catalog),
     orders: new OrderService(
@@ -38,7 +42,7 @@ export function createServices(
       catalog,
       actor,
     ),
-    planning: new PlanningService(planningRepository, orderRepository, catalog, actor),
+    planning: new PlanningService(planningRepository, orderRepository, catalog, actor, zones),
     management: new ManagementService(
       new D1ManagementRepository(env.DB, actor.id),
       new BetterAuthAccountGateway(auth, headers),

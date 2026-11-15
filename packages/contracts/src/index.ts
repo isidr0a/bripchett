@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { allVisitDays, visitDaysSchema, zoneIdSchema } from './zones';
+export * from './zones';
 import { routeFrequencies, recurringRouteDates, type RouteRecurrence } from './route-recurrence';
 export { routeFrequencies, recurringRouteDates, addCalendarDays } from './route-recurrence';
 export type { RouteFrequency, RouteRecurrence } from './route-recurrence';
@@ -42,31 +44,20 @@ export const geoSchema = z.object({
   confirmed: z.literal(true),
 });
 export type GeoPoint = z.infer<typeof geoSchema>;
-export const slotSchema = z
-  .object({
-    day: z.number().int().min(0).max(6),
-    allDay: z
-      .boolean()
-      .optional()
-      .describe('Permite visitas a cualquier hora del día seleccionado.'),
-    start: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
-    end: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
-  })
-  .refine((v) => v.start < v.end, 'El horario de cierre debe ser posterior al de inicio.');
-export type VisitSlot = z.infer<typeof slotSchema>;
 export const clientSchema = z.object({
   name: z.string().trim().min(2).max(150),
   rif: z.string().trim().max(30).default(''),
   contact: z.string().trim().max(100).default(''),
   phone: z.string().trim().max(40).default(''),
   address: z.string().trim().max(300).default(''),
-  zone: z.string().trim().max(100).default(''),
+  zoneId: zoneIdSchema,
   sellerId: z.string().min(1).nullable().default(null),
   active: z.boolean().default(true),
   geo: geoSchema.nullable().default(null),
-  slots: z.array(slotSchema).max(21).default([]),
+  visitDays: visitDaysSchema.default(() => [...allVisitDays]),
   recurrence: z.enum(['semanal', 'quincenal', 'mensual']).default('semanal'),
   recurrenceStart: z.iso.date(),
+  zoneImpactRevision: z.string().length(64).optional(),
 });
 export const completionSchema = clientSchema
   .pick({ name: true, rif: true, contact: true, phone: true, address: true, geo: true })
@@ -74,8 +65,26 @@ export const completionSchema = clientSchema
     (v) => !!v.rif && !!v.contact && !!v.phone && !!v.address && !!v.geo,
     'Completa identificación, contacto, teléfono, dirección y GPS.',
   );
+export const sellerClientSchema = clientSchema
+  .pick({
+    name: true,
+    rif: true,
+    contact: true,
+    phone: true,
+    address: true,
+    geo: true,
+    zoneId: true,
+  })
+  .strict()
+  .refine(
+    (data) => !!data.rif && !!data.contact && !!data.phone && !!data.address && !!data.geo,
+    'Completa el RIF, contacto, teléfono, dirección y GPS.',
+  );
+export type SellerClientInput = z.infer<typeof sellerClientSchema>;
 export type ClientInput = z.infer<typeof clientSchema>;
-export type Client = ClientInput & {
+export type Client = Omit<ClientInput, 'zoneId' | 'zoneImpactRevision'> & {
+  zoneId: string | null;
+  zone: string;
   id: string;
   code: string;
   sellerName: string | null;
@@ -205,6 +214,7 @@ export const routeSchema = z
   .object({
     name: z.string().trim().min(2).max(100),
     sellerId: z.string().min(1),
+    zoneId: zoneIdSchema,
     date: z.iso.date(),
     recurrence: z
       .object({
@@ -262,6 +272,8 @@ export type Visit = {
 };
 export type Route = {
   id: string;
+  zoneId: string | null;
+  zone: string;
   name: string;
   date: string;
   sellerId: string;
@@ -336,6 +348,7 @@ export const moduleAccess: Record<Role, string[]> = {
     'reportes',
     'configuracion',
     'papelera',
+    'zonas',
   ],
   vendedor: ['dashboard', 'pedidos', 'rutas', 'clientes', 'productos'],
   preparacion: ['comandas'],

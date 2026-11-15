@@ -47,6 +47,7 @@ const links = [
   ['comandas', 'Comandas'],
   ['rutas', 'Rutas y visitas'],
   ['clientes', 'Clientes'],
+  ['zonas', 'Zonas'],
   ['productos', 'Productos'],
   ['usuarios', 'Usuarios'],
   ['reportes', 'Reportes'],

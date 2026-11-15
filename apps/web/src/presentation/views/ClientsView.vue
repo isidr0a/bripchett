@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import DeleteRecord from '../components/DeleteRecord.vue';
 import { clientMissing } from '@briochett/contracts';
-import { visitSlotTime } from '../../shared/formatters';
 import PageHeader from '../components/PageHeader.vue';
 import AppPagination from '../components/AppPagination.vue';
 import AppModal from '../components/AppModal.vue';
@@ -33,7 +32,7 @@ const {
     <label class="search-label"
       >Buscar cliente<input v-model="q" type="search" placeholder="Nombre, código o RIF" /></label
     ><button
-      v-if="auth.isAdmin"
+      v-if="auth.canSell"
       @click="
         selected = null;
         mode = 'new';
@@ -75,7 +74,7 @@ const {
             <td>
               {{ c.rif || 'RIF pendiente' }}<small>{{ c.contact }}</small>
             </td>
-            <td>{{ c.zone || '—' }}</td>
+            <td>{{ c.zone || 'Zona pendiente' }}</td>
             <td>{{ c.sellerName || 'Sin asignar' }}</td>
             <td>
               <span class="badge" :class="{ inactive: !c.active }">{{
@@ -148,6 +147,10 @@ const {
           <p>{{ selected.address || 'Pendiente' }}</p>
         </div>
         <div>
+          <small>Zona</small>
+          <p>{{ selected.zone || 'Zona pendiente' }}</p>
+        </div>
+        <div>
           <small>Vendedor</small>
           <p>{{ selected.sellerName || 'Sin asignar' }}</p>
         </div>
@@ -170,11 +173,11 @@ const {
         </p>
       </div>
       <section>
-        <h3>Disponibilidad de visitas</h3>
-        <p v-for="(slot, i) in selected.slots" :key="i">
-          {{ days[slot.day] }} · {{ visitSlotTime(slot) }}
+        <h3>Días permitidos de visita</h3>
+        <p v-if="selected.visitDays.length">
+          {{ selected.visitDays.map((day) => days[day]).join(', ') }} · Cualquier hora
         </p>
-        <p v-if="!selected.slots.length" class="muted">Sin horarios configurados.</p>
+        <p v-else class="muted">Sin días habilitados.</p>
         <p class="muted small">{{ selected.recurrence }} · Desde {{ selected.recurrenceStart }}</p>
       </section>
       <p v-if="message" class="notice" role="status">{{ message }}</p>

@@ -44,7 +44,7 @@ export class TrashService {
             fail(
               409,
               'TRASH_RESTORE_DEPENDENCY',
-              'La asignación, el horario o la recurrencia del cliente cambió.',
+              'La asignación, los días permitidos o la recurrencia del cliente cambió.',
             );
           versions[client.id] = client.updatedAt;
         } catch (error) {
