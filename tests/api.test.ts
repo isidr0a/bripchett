@@ -101,6 +101,7 @@ beforeAll(async () => {
     '0002_concurrency_guards.sql',
     '0003_recurring_routes.sql',
     '0004_route_series_guard.sql',
+    '0005_soft_delete.sql',
   ]) {
     const sql = await readFile(new URL('../apps/api/migrations/' + file, import.meta.url), 'utf8');
     const lines = sql.split('\n'),
@@ -834,7 +835,9 @@ describe('Rutas, visitas, reportes e integración', () => {
       (await request('/api/v1/routes/' + route.body.id, 'administracion', 'PATCH', edited)).status,
     ).toBe(200);
     const stops = await db
-      .prepare('SELECT id,client_id FROM visits WHERE route_id=? ORDER BY route_position')
+      .prepare(
+        'SELECT id,client_id FROM visits WHERE route_id=? AND deleted_at IS NULL ORDER BY route_position',
+      )
       .bind(route.body.id)
       .all<any>();
     expect(stops.results.map((v) => v.client_id)).toEqual([incomplete.id, client.id]);
@@ -857,7 +860,7 @@ describe('Rutas, visitas, reportes e integración', () => {
     expect(
       (
         await db
-          .prepare('SELECT count(*) n FROM visits WHERE route_id=?')
+          .prepare('SELECT count(*) n FROM visits WHERE route_id=? AND deleted_at IS NULL')
           .bind(route.body.id)
           .first<any>()
       ).n,
@@ -960,3 +963,290 @@ it('busca y pagina 10.000 clientes sin exponer otra asignación', async () => {
   const exact = await request('/api/v1/clients?q=MASS-09999', 'vendedor');
   expect(exact.body.items[0].id).toBe('mass-9999');
 }, 120000);
+
+describe('Papelera y borrado lógico', () => {
+  const drop = (type: string, id: string, query = '', role = 'administracion') =>
+    request(`/api/v1/${type}/${id}${query}`, role, 'DELETE');
+  const restore = (type: string, id: string, role = 'administracion') =>
+    request(`/api/v1/trash/${type}/${id}/restore`, role, 'POST');
+  const trash = (query = '', role = 'administracion') => request('/api/v1/trash' + query, role);
+  const post = (path: string, data: unknown) =>
+    request('/api/v1/' + path, 'administracion', 'POST', data);
+  const makeClient = async (name: string) => {
+    const input = baseClient(name, users.vendedor.id);
+    const result = await post('clients', input);
+    expect(result.status).toBe(201);
+    return { id: result.body.id as string, input };
+  };
+  const schedule = async (clientId: string, scheduledAt = '2028-11-06T13:00:00Z') => {
+    const result = await post('visits', { clientId, scheduledAt });
+    expect(result.status, JSON.stringify(result.body)).toBe(201);
+    return result.body.id as string;
+  };
+  const complete = (id: string) =>
+    post(`visits/${id}/result`, { result: 'sin_pedido', notes: 'Realizada' });
+
+  it('restringe papelera, eliminación y restauración a Administración y permite DELETE en el origen configurado', async () => {
+    for (const role of ['vendedor', 'supervision', 'preparacion']) {
+      expect((await trash('', role)).status).toBe(403);
+      expect((await drop('products', product.id, '', role)).status).toBe(403);
+      expect((await restore('products', product.id, role)).status).toBe(403);
+    }
+    expect((await trash('', 'none')).status).toBe(401);
+    const cors = await request('/api/v1/products/' + product.id, 'none', 'OPTIONS', undefined, {
+      'Access-Control-Request-Method': 'DELETE',
+    });
+    expect(cors.status).toBe(204);
+    expect(cors.response.headers.get('Access-Control-Allow-Methods')).toContain('DELETE');
+    expect((await trash('?type=invalid')).status).toBe(422);
+  });
+
+  it('oculta el cliente del buscador y del acceso directo, reserva el RIF y audita una sola vez', async () => {
+    const { id, input } = await makeClient('Papelera Cliente Uno');
+    const visit = await schedule(id);
+    expect((await drop('clients', id)).body.error.code).toBe('TRASH_CLIENT_DEPENDENCIES');
+    expect((await drop('users', users.vendedor.id)).body.error.code).toBe(
+      'TRASH_USER_DEPENDENCIES',
+    );
+    expect((await drop('visits', visit)).status).toBe(200);
+    const results = await Promise.all([drop('clients', id), drop('clients', id)]);
+    expect(results.map((r) => r.body.affected).sort()).toEqual([0, 1]);
+    expect((await request('/api/v1/clients/' + id)).status).toBe(404);
+    expect((await request('/api/v1/clients?q=Papelera%20Cliente%20Uno')).body.total).toBe(0);
+    expect(
+      (await request('/api/v1/clients?q=Papelera%20Cliente%20Uno', 'vendedor')).body.total,
+    ).toBe(0);
+    expect((await post('clients', input)).status).toBe(409);
+    expect((await restore('visits', visit)).status).toBe(409);
+    const removed = await trash('?type=clients');
+    expect(removed.body.items.find((row: any) => row.id === id)).toMatchObject({
+      type: 'clients',
+      label: input.name,
+      deletedByName: 'Administrador',
+    });
+    expect((await trash()).body.items.some((row: any) => row.id === id)).toBe(true);
+    expect((await restore('clients', id)).status).toBe(200);
+    expect((await restore('visits', visit)).status).toBe(200);
+    expect((await request('/api/v1/clients/' + id)).body.id).toBe(id);
+    const history = await db
+      .prepare('SELECT action FROM audit_log WHERE entity_id=? ORDER BY created_at')
+      .bind(id)
+      .all<{ action: string }>();
+    expect(history.results.map((row) => row.action)).toEqual(['crear', 'eliminar', 'restaurar']);
+  });
+
+  it('revoca las sesiones, bloquea el acceso eliminado y conserva el último administrador', async () => {
+    expect((await drop('users', users.administracion.id)).body.error.code).toBe('TRASH_SELF');
+    await expect(
+      db
+        .prepare("UPDATE user SET deleted_at='2028-01-01T00:00:00Z',deleted_by=id WHERE id=?")
+        .bind(users.administracion.id)
+        .run(),
+    ).rejects.toThrow(/LAST_ADMIN/);
+    const id = users.supervision.id;
+    expect((await drop('users', id)).status).toBe(200);
+    expect((await request('/api/v1/me', 'supervision')).status).toBe(401);
+    await db.prepare('DELETE FROM rateLimit').run();
+    const creds = { username: 'supervision', password: 'Initial-dev-2026!' };
+    expect((await request('/api/auth/sign-in/username', 'none', 'POST', creds)).status).toBe(403);
+    expect(
+      (
+        await request(`/api/v1/users/${id}/password`, 'administracion', 'POST', {
+          password: 'Long-test-password!',
+        })
+      ).status,
+    ).toBe(404);
+    expect((await restore('users', id)).status).toBe(200);
+    expect((await request('/api/v1/me', 'supervision')).status).toBe(401);
+    const fresh = await request('/api/auth/sign-in/username', 'none', 'POST', creds);
+    expect(fresh.status).toBe(200);
+    cookies.supervision = fresh.response.headers
+      .getSetCookie()
+      .map((c) => c.split(';')[0])
+      .join('; ');
+  });
+
+  it('mantiene partidas y tasas históricas, y al quitar la tasa vigente usa la anterior', async () => {
+    const item = (
+      await post('products', {
+        name: 'Pan de prueba papelera',
+        sku: 'PAPELERA',
+        priceUsd: '2.00',
+        active: true,
+      })
+    ).body;
+    const first = (await post('rates', { currency: 'VES', rate: '100' })).body;
+    const latest = (await post('rates', { currency: 'VES', rate: '125' })).body;
+    const payload = {
+      clientId: client.id,
+      currency: 'VES',
+      items: [{ productId: item.id, quantity: 1 }],
+      notes: '',
+    };
+    const quote = (await post('orders/quote', payload)).body;
+    expect(quote.rate).toBe('125');
+    const created = await request(
+      '/api/v1/orders',
+      'administracion',
+      'POST',
+      { ...payload, quoteVersion: quote.version },
+      { 'Idempotency-Key': randomUUID() },
+    );
+    expect(created.status).toBe(201);
+    expect((await drop('rates', latest.id)).status).toBe(200);
+    expect((await post('orders/quote', payload)).body.rate).toBe('100');
+    expect((await drop('rates', first.id)).status).toBe(200);
+    const remaining = (await request('/api/v1/rates')).body.items.filter(
+      (r: any) => r.currency === 'VES',
+    );
+    for (const rate of remaining) expect((await drop('rates', rate.id)).status).toBe(200);
+    expect((await post('orders/quote', payload)).body.error.code).toBe('RATE_MISSING');
+    expect((await restore('rates', latest.id)).status).toBe(200);
+    expect((await drop('products', item.id)).status).toBe(200);
+    expect((await post('orders/quote', payload)).body.error.code).toBe('PRODUCT_UNAVAILABLE');
+    const history = (await request('/api/v1/orders/' + created.body.id)).body;
+    expect(history.rate).toBe('125');
+    expect(history.total).toBe('250.00');
+    expect(history.items[0].name).toBe(item.name);
+    expect((await restore('products', item.id)).status).toBe(200);
+    expect((await post('orders/quote', payload)).body.total).toBe('250.00');
+  });
+
+  it('envía a papelera solo pedidos anulados y mantiene la visita, la comanda y la clave del pedido', async () => {
+    const { id } = await makeClient('Pedido asociado a visita');
+    const visitId = await schedule(id);
+    const payload = {
+      clientId: id,
+      currency: 'USD',
+      items: [{ productId: product.id, quantity: 1 }],
+      visitId,
+      notes: '',
+    };
+    const quote = (await post('orders/quote', payload)).body;
+    const headers = { 'Idempotency-Key': randomUUID() };
+    const body = { ...payload, quoteVersion: quote.version };
+    const created = await request('/api/v1/orders', 'administracion', 'POST', body, headers);
+    expect(created.status).toBe(201);
+    const orderId = created.body.id;
+    expect((await drop('orders', orderId)).body.error.code).toBe('TRASH_ORDER_STATE');
+    expect((await post(`orders/${orderId}/validate`, {})).status).toBe(200);
+    expect((await post(`orders/${orderId}/cancel`, {})).status).toBe(200);
+    expect((await drop('orders', orderId)).status).toBe(200);
+    expect((await request('/api/v1/orders/' + orderId)).status).toBe(404);
+    expect(
+      (await request('/api/v1/orders', 'administracion', 'POST', body, headers)).body.error.code,
+    ).toBe('ORDER_DELETED');
+    expect((await request('/api/v1/visits/' + visitId)).body).toMatchObject({
+      status: 'con_pedido',
+      orderId,
+      orderDeleted: true,
+    });
+    expect(
+      await db.prepare('SELECT id FROM commands WHERE order_id=?').bind(orderId).first(),
+    ).toBeTruthy();
+    expect((await restore('orders', orderId)).status).toBe(200);
+    expect((await request('/api/v1/orders/' + orderId)).body.status).toBe('anulado');
+    expect((await request('/api/v1/visits/' + visitId)).body.orderDeleted).toBe(false);
+  });
+
+  async function makeSeries(name: string, stops: number) {
+    const date = '2028-11-06';
+    const clients = await Promise.all(
+      Array.from({ length: stops }, (_, i) => makeClient(name + ' ' + i)),
+    );
+    const input = {
+      name,
+      date,
+      sellerId: users.vendedor.id,
+      recurrence: { frequency: 'semanal', until: '2028-11-20' },
+      stops: clients.map(({ id }, i) => ({ clientId: id, time: i ? '10:00' : '09:00' })),
+    };
+    const created = await post('routes', input);
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const id = created.body.id as string;
+    const series = async () =>
+      (await request('/api/v1/routes')).body.items
+        .filter((r: any) => r.seriesId === id)
+        .sort((a: any, b: any) => a.date.localeCompare(b.date));
+    return { id, input, clients, series };
+  }
+
+  it('elimina una fecha o las siguientes pendientes y conserva recorridos realizados y paradas ya eliminadas', async () => {
+    const { series } = await makeSeries('Serie para papelera', 2);
+    const [first, middle, last] = await series();
+    expect((await drop('visits', first.stops[1].visitId)).status).toBe(200);
+    expect((await drop('visits', first.stops[0].visitId)).body.error.code).toBe('TRASH_LAST_STOP');
+    expect((await complete(middle.stops[0].visitId)).status).toBe(200);
+    expect((await drop('routes', middle.id)).body.error.code).toBe('ROUTE_STARTED');
+    expect((await drop('routes', last.id)).body.affected).toBe(1);
+    expect((await restore('routes', last.id)).status).toBe(200);
+    expect((await drop('routes', first.id, '?scope=upcoming')).body.affected).toBe(2);
+    expect((await series()).map((r: any) => r.id)).toEqual([middle.id]);
+    expect((await trash('?type=visits')).body.items.map((v: any) => v.id)).not.toContain(
+      first.stops[0].visitId,
+    );
+    expect((await restore('visits', first.stops[0].visitId)).status).toBe(409);
+    expect((await restore('routes', first.id)).status).toBe(200);
+    expect((await series())[0].stops.map((s: any) => s.visitId)).toEqual([first.stops[0].visitId]);
+    expect((await restore('visits', first.stops[1].visitId)).status).toBe(200);
+    expect((await series())[0].stops.map((s: any) => s.visitId)).toEqual(
+      first.stops.map((s: any) => s.visitId),
+    );
+  });
+
+  it('restaura un recorrido entero o ninguno si hay colisión o cambió la disponibilidad', async () => {
+    const { id, clients, series } = await makeSeries('Conflicto de recuperación', 2);
+    const [before] = await series();
+    expect((await drop('routes', id)).status).toBe(200);
+    const duplicate = await schedule(clients[1].id, '2028-11-06T14:00:00Z');
+    const failed = await restore('routes', id);
+    expect(failed.body.error.code).toBe('VISIT_DUPLICATE');
+    expect((await request('/api/v1/visits/' + before.stops[0].visitId)).status).toBe(404);
+    expect((await drop('visits', duplicate)).status).toBe(200);
+    const { id: clientId, input } = clients[0];
+    const update = (data: unknown) =>
+      request('/api/v1/clients/' + clientId, 'administracion', 'PATCH', data);
+    expect((await update({ ...input, slots: [] })).status).toBe(200);
+    expect((await restore('routes', id)).body.error.code).toBe('TRASH_RESTORE_DEPENDENCY');
+    expect((await update(input)).status).toBe(200);
+    expect((await restore('routes', id)).status).toBe(200);
+    expect((await series())[0].stops.map((s: any) => s.visitId)).toEqual(
+      before.stops.map((s: any) => s.visitId),
+    );
+  });
+
+  it('conserva la identidad de paradas sin cambios y archiva las que se reemplazan', async () => {
+    const { id, input, series } = await makeSeries('Editar paradas para papelera', 2);
+    const [original] = await series();
+    const stops = [{ ...input.stops[1], time: '11:00' }, input.stops[0]];
+    const edited = await request('/api/v1/routes/' + id, 'administracion', 'PATCH', {
+      ...input,
+      recurrence: null,
+      stops,
+    });
+    expect(edited.status).toBe(200);
+    const [current] = await series();
+    expect(current.stops[1].visitId).toBe(original.stops[0].visitId);
+    expect(current.stops[0].visitId).not.toBe(original.stops[1].visitId);
+    expect(
+      (await trash('?type=visits')).body.items.some((v: any) => v.id === original.stops[1].visitId),
+    ).toBe(true);
+    expect((await restore('visits', original.stops[1].visitId)).body.error.code).toBe(
+      'TRASH_ROUTE_CLIENT',
+    );
+  });
+
+  it('serializa el cierre y la eliminación de una visita sin modificar ambas versiones', async () => {
+    const { id } = await makeClient('Concurrencia papelera');
+    const visit = await schedule(id);
+    const results = await Promise.all([drop('visits', visit), complete(visit)]);
+    expect(results.filter((r) => r.status === 200)).toHaveLength(1);
+    const saved = await db
+      .prepare('SELECT status,deleted_at FROM visits WHERE id=?')
+      .bind(visit)
+      .first<{ status: string; deleted_at: string | null }>();
+    expect(saved?.deleted_at ? saved.status === 'programada' : saved?.status === 'sin_pedido').toBe(
+      true,
+    );
+  });
+});

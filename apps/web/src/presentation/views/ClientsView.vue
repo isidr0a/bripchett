@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DeleteRecord from '../components/DeleteRecord.vue';
 import { clientMissing } from '@briochett/contracts';
 import { visitSlotTime } from '../../shared/formatters';
 import PageHeader from '../components/PageHeader.vue';
@@ -92,6 +93,7 @@ const {
               >
                 Ver ficha
               </button>
+              <DeleteRecord :id="c.id" type="clients" :label="c.name" @deleted="load" />
             </td>
           </tr>
         </tbody>

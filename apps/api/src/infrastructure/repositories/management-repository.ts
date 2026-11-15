@@ -28,22 +28,24 @@ const mapUser = (row: UserRow): SessionUser => ({
 export class D1ManagementRepository extends D1Repository implements ManagementRepository {
   async listUsers({ page, pageSize, offset }: Pagination) {
     const [list, total] = await this.db.batch([
-      this.db.prepare(userSelect + ' ORDER BY name LIMIT ? OFFSET ?').bind(pageSize, offset),
-      this.db.prepare('SELECT count(*) total FROM user'),
+      this.db
+        .prepare(userSelect + ' WHERE deleted_at IS NULL ORDER BY name LIMIT ? OFFSET ?')
+        .bind(pageSize, offset),
+      this.db.prepare('SELECT count(*) total FROM user WHERE deleted_at IS NULL'),
     ]);
     return { items: (list.results as UserRow[]).map(mapUser), total: count(total), page, pageSize };
   }
   async listSellers() {
     const result = await this.db
       .prepare(
-        "SELECT id,name FROM user WHERE role='vendedor' AND active=1 AND banned=0 ORDER BY name",
+        "SELECT id,name FROM user WHERE role='vendedor' AND active=1 AND banned=0 AND deleted_at IS NULL ORDER BY name",
       )
       .all<NamedUser>();
     return result.results;
   }
   async findUser(id: string) {
     const row = await this.db
-      .prepare(userSelect + ' WHERE id=?')
+      .prepare(userSelect + ' WHERE id=? AND deleted_at IS NULL')
       .bind(id)
       .first<UserRow>();
     return row ? mapUser(row) : null;
@@ -54,7 +56,9 @@ export class D1ManagementRepository extends D1Repository implements ManagementRe
   async updateUser(id: string, d: UserUpdateInput, previousRole: string) {
     await this.db.batch([
       this.db
-        .prepare('UPDATE user SET name=?,email=?,role=?,active=?,banned=?,updatedAt=? WHERE id=?')
+        .prepare(
+          'UPDATE user SET name=?,email=?,role=?,active=?,banned=?,updatedAt=? WHERE id=? AND deleted_at IS NULL',
+        )
         .bind(d.name, d.email.toLowerCase(), d.role, +d.active, +!d.active, Date.now(), id),
       this.db
         .prepare(
@@ -66,7 +70,9 @@ export class D1ManagementRepository extends D1Repository implements ManagementRe
   }
   async requirePasswordChange(id: string) {
     await this.db.batch([
-      this.db.prepare('UPDATE user SET mustChangePassword=1 WHERE id=?').bind(id),
+      this.db
+        .prepare('UPDATE user SET mustChangePassword=1 WHERE id=? AND deleted_at IS NULL')
+        .bind(id),
       this.db.prepare('DELETE FROM session WHERE userId=?').bind(id),
       this.audit('restablecer_contrasena', 'usuario', id),
     ]);
@@ -77,24 +83,25 @@ export class D1ManagementRepository extends D1Repository implements ManagementRe
     const [clients, orders, visits, commands] = await this.db.batch<Counts>([
       this.db
         .prepare(
-          'SELECT count(*) total FROM clients WHERE active=1' + (own ? ' AND seller_id=?' : ''),
+          'SELECT count(*) total FROM clients WHERE active=1 AND deleted_at IS NULL' +
+            (own ? ' AND seller_id=?' : ''),
         )
         .bind(...args),
       this.db
         .prepare(
-          "SELECT count(*) total,sum(CASE WHEN status='pendiente' THEN 1 ELSE 0 END) pending FROM orders" +
-            (own ? ' WHERE author_id=?' : ''),
+          "SELECT count(*) total,sum(CASE WHEN status='pendiente' THEN 1 ELSE 0 END) pending FROM orders WHERE deleted_at IS NULL" +
+            (own ? ' AND author_id=?' : ''),
         )
         .bind(...args),
       this.db
         .prepare(
-          "SELECT count(*) total,sum(CASE WHEN status='programada' THEN 1 ELSE 0 END) scheduled FROM visits" +
-            (own ? ' WHERE seller_id=?' : ''),
+          "SELECT count(*) total,sum(CASE WHEN status='programada' THEN 1 ELSE 0 END) scheduled FROM visits WHERE deleted_at IS NULL" +
+            (own ? ' AND seller_id=?' : ''),
         )
         .bind(...args),
       this.db
         .prepare(
-          "SELECT count(*) total FROM commands k JOIN orders o ON o.id=k.order_id WHERE k.status<>'listo' AND o.status<>'anulado'" +
+          "SELECT count(*) total FROM commands k JOIN orders o ON o.id=k.order_id WHERE k.status<>'listo' AND o.status<>'anulado' AND o.deleted_at IS NULL" +
             (own ? ' AND o.author_id=?' : ''),
         )
         .bind(...args),
@@ -109,8 +116,12 @@ export class D1ManagementRepository extends D1Repository implements ManagementRe
     };
   }
   async report({ from, to, start, end, sellerId }: ReportRange) {
-    const orderWhere = 'created_at>=? AND created_at<?' + (sellerId ? ' AND author_id=?' : '');
-    const visitWhere = 'scheduled_at>=? AND scheduled_at<?' + (sellerId ? ' AND seller_id=?' : '');
+    const orderWhere =
+      'deleted_at IS NULL AND created_at>=? AND created_at<?' +
+      (sellerId ? ' AND author_id=?' : '');
+    const visitWhere =
+      'deleted_at IS NULL AND scheduled_at>=? AND scheduled_at<?' +
+      (sellerId ? ' AND seller_id=?' : '');
     const args = [start, end, ...(sellerId ? [sellerId] : [])];
     const [totals, states, visits, usd] = await this.db.batch([
       this.db

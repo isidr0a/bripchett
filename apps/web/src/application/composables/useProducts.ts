@@ -39,5 +39,19 @@ export function useProducts() {
       saving.value = false;
     }
   }
-  return { auth, data, page, busy, error, open, selected, saving, formError, form, edit, save };
+  return {
+    auth,
+    data,
+    page,
+    busy,
+    error,
+    open,
+    selected,
+    saving,
+    formError,
+    form,
+    edit,
+    save,
+    load,
+  };
 }

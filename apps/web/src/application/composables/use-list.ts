@@ -19,7 +19,11 @@ export function useList<T>(source: () => string) {
       const result = await api<Page<T>>(p + (p.includes('?') ? '&' : '?') + 'page=' + page.value, {
         signal: controller.signal,
       });
-      if (current === controller) data.value = result;
+      if (current === controller) {
+        const lastPage = Math.max(1, Math.ceil(result.total / result.pageSize));
+        if (page.value > lastPage) page.value = lastPage;
+        else data.value = result;
+      }
     } catch (e) {
       if (!(e instanceof DOMException && e.name === 'AbortError')) error.value = errorMessage(e);
     } finally {

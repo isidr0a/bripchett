@@ -51,6 +51,7 @@ const links = [
   ['usuarios', 'Usuarios'],
   ['reportes', 'Reportes'],
   ['configuracion', 'Configuración'],
+  ['papelera', 'Papelera'],
 ];
 const shown = computed(() => links.filter(([key]) => auth.can(key)));
 const onExpired = () => {

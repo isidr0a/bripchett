@@ -257,6 +257,7 @@ export type Visit = {
   status: 'programada' | 'con_pedido' | 'sin_pedido';
   notes: string;
   orderId: string | null;
+  orderDeleted?: boolean;
   routeId: string | null;
 };
 export type Route = {
@@ -334,6 +335,7 @@ export const moduleAccess: Record<Role, string[]> = {
     'usuarios',
     'reportes',
     'configuracion',
+    'papelera',
   ],
   vendedor: ['dashboard', 'pedidos', 'rutas', 'clientes', 'productos'],
   preparacion: ['comandas'],
@@ -347,3 +349,5 @@ export function money(value: string | number, currency: Currency = 'USD') {
     maximumFractionDigits: 2,
   }).format(Number(value));
 }
+
+export * from './trash';

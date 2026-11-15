@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import DeleteRecord from '../components/DeleteRecord.vue';
 import PageHeader from '../components/PageHeader.vue';
 import { dateTime } from '../../shared/formatters';
 import { useSettings } from '../../application/composables/useSettings';
-const { rates, currency, rate, busy, error, success, integration, save } = useSettings();
+const { rates, currency, rate, busy, error, success, integration, save, load } = useSettings();
 </script>
 <template>
   <PageHeader title="Configuración" description="Tasas de cambio e integración administrativa" />
@@ -47,6 +48,7 @@ const { rates, currency, rate, busy, error, success, integration, save } = useSe
             <th>Moneda</th>
             <th>Unidades / USD</th>
             <th>Registrada por</th>
+            <th>Acción</th>
           </tr>
         </thead>
         <tbody>
@@ -55,6 +57,14 @@ const { rates, currency, rate, busy, error, success, integration, save } = useSe
             <td>{{ r.currency }}</td>
             <td>{{ r.rate }}</td>
             <td>{{ r.createdBy }}</td>
+            <td>
+              <DeleteRecord
+                :id="r.id"
+                type="rates"
+                :label="r.currency + ' · ' + r.rate"
+                @deleted="load"
+              />
+            </td>
           </tr>
         </tbody>
       </table>

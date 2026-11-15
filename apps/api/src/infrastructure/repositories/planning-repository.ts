@@ -13,7 +13,7 @@ const routeSelect =
   'SELECT r.id,r.name,r.date,r.seller_id sellerId,u.name sellerName,r.series_id seriesId,r.recurrence_json recurrenceJson FROM routes r JOIN user u ON u.id=r.seller_id';
 
 const visitSelect =
-  'SELECT v.id,v.client_id clientId,c.name clientName,v.seller_id sellerId,u.name sellerName,v.scheduled_at scheduledAt,v.status,v.notes,v.order_id orderId,v.route_id routeId FROM visits v JOIN clients c ON c.id=v.client_id JOIN user u ON u.id=v.seller_id';
+  'SELECT v.id,v.client_id clientId,c.name clientName,v.seller_id sellerId,u.name sellerName,v.scheduled_at scheduledAt,v.status,v.notes,v.order_id orderId,EXISTS(SELECT 1 FROM orders o WHERE o.id=v.order_id AND o.deleted_at IS NOT NULL) orderDeleted,v.route_id routeId FROM visits v JOIN clients c ON c.id=v.client_id JOIN user u ON u.id=v.seller_id';
 const localTime = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'America/Caracas',
   hour: '2-digit',
@@ -23,7 +23,7 @@ const localTime = new Intl.DateTimeFormat('en-GB', {
 
 export class D1PlanningRepository extends D1Repository implements PlanningRepository {
   async listRoutes({ page, pageSize, offset }: Pagination, sellerId?: string) {
-    const where = sellerId ? ' WHERE r.seller_id=?' : '',
+    const where = ' WHERE r.deleted_at IS NULL' + (sellerId ? ' AND r.seller_id=?' : ''),
       args = sellerId ? [sellerId] : [];
     const rows = await this.db
       .prepare(routeSelect + where + ' ORDER BY r.date DESC,r.created_at DESC LIMIT ? OFFSET ?')
@@ -38,7 +38,9 @@ export class D1PlanningRepository extends D1Repository implements PlanningReposi
   }
   private async routeWithStops({ recurrenceJson, ...route }: RouteRow): Promise<Route> {
     const visits = await this.db
-      .prepare(visitSelect + ' WHERE v.route_id=? ORDER BY v.route_position')
+      .prepare(
+        visitSelect + ' WHERE v.route_id=? AND v.deleted_at IS NULL ORDER BY v.route_position,v.id',
+      )
       .bind(route.id)
       .all<Visit>();
     return {
@@ -55,7 +57,7 @@ export class D1PlanningRepository extends D1Repository implements PlanningReposi
   }
   async findRoute(id: string) {
     const row = await this.db
-      .prepare(routeSelect + ' WHERE r.id=?')
+      .prepare(routeSelect + ' WHERE r.id=? AND r.deleted_at IS NULL')
       .bind(id)
       .first<RouteRow>();
     return row ? this.routeWithStops(row) : null;
@@ -77,9 +79,6 @@ export class D1PlanningRepository extends D1Repository implements PlanningReposi
             first.recurrence ? JSON.stringify(first.recurrence) : null,
             editingId,
           ),
-        this.db
-          .prepare("DELETE FROM visits WHERE route_id=? AND status='programada'")
-          .bind(editingId),
       );
     }
     const newRoutes = routes
@@ -107,9 +106,28 @@ export class D1PlanningRepository extends D1Repository implements PlanningReposi
     statements.push(
       this.db
         .prepare(
-          "INSERT INTO visits(id,client_id,seller_id,scheduled_at,route_id,route_position,created_at) SELECT json_extract(value,'$.id'),json_extract(value,'$.clientId'),json_extract(value,'$.sellerId'),json_extract(value,'$.scheduledAt'),json_extract(value,'$.routeId'),json_extract(value,'$.position'),? FROM json_each(?)",
+          "INSERT INTO visits(id,client_id,seller_id,scheduled_at,route_id,route_position,created_at) SELECT json_extract(value,'$.id'),json_extract(value,'$.clientId'),json_extract(value,'$.sellerId'),json_extract(value,'$.scheduledAt'),json_extract(value,'$.routeId'),json_extract(value,'$.position'),? FROM json_each(?) j WHERE NOT EXISTS(SELECT 1 FROM visits v WHERE v.route_id=json_extract(j.value,'$.routeId') AND v.client_id=json_extract(j.value,'$.clientId') AND v.seller_id=json_extract(j.value,'$.sellerId') AND julianday(v.scheduled_at)=julianday(json_extract(j.value,'$.scheduledAt')) AND v.deleted_at IS NULL)",
         )
         .bind(first.at, JSON.stringify(stops)),
+    );
+    if (editingId) {
+      const updated = JSON.stringify(first.stops);
+      const sameStop =
+        "json_extract(s.value,'$.clientId')=visits.client_id AND json_extract(s.value,'$.sellerId')=visits.seller_id AND julianday(json_extract(s.value,'$.scheduledAt'))=julianday(visits.scheduled_at)";
+      statements.push(
+        this.db
+          .prepare(
+            `UPDATE visits SET route_position=(SELECT json_extract(s.value,'$.position') FROM json_each(?) s WHERE ${sameStop}) WHERE route_id=? AND deleted_at IS NULL AND EXISTS(SELECT 1 FROM json_each(?) s WHERE ${sameStop})`,
+          )
+          .bind(updated, editingId, updated),
+        this.db
+          .prepare(
+            `UPDATE visits SET deleted_at=?,deleted_by=? WHERE route_id=? AND deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM json_each(?) s WHERE ${sameStop})`,
+          )
+          .bind(first.at, this.actorId, editingId, updated),
+      );
+    }
+    statements.push(
       this.audit(editingId ? 'actualizar' : 'crear', 'ruta', first.id, {
         recurrence: first.recurrence,
         occurrences: routes.length,
@@ -118,7 +136,7 @@ export class D1PlanningRepository extends D1Repository implements PlanningReposi
     await this.db.batch(statements);
   }
   async listVisits({ page, pageSize, offset }: Pagination, sellerId?: string) {
-    const where = sellerId ? ' WHERE v.seller_id=?' : '',
+    const where = ' WHERE v.deleted_at IS NULL' + (sellerId ? ' AND v.seller_id=?' : ''),
       args = sellerId ? [sellerId] : [];
     const [list, total] = await this.db.batch([
       this.db
@@ -126,13 +144,19 @@ export class D1PlanningRepository extends D1Repository implements PlanningReposi
         .bind(...args, pageSize, offset),
       this.db.prepare('SELECT count(*) total FROM visits v' + where).bind(...args),
     ]);
-    return { items: list.results as Visit[], total: count(total), page, pageSize };
+    return {
+      items: (list.results as Visit[]).map((v) => ({ ...v, orderDeleted: !!v.orderDeleted })),
+      total: count(total),
+      page,
+      pageSize,
+    };
   }
-  findVisit(id: string) {
-    return this.db
-      .prepare(visitSelect + ' WHERE v.id=?')
+  async findVisit(id: string) {
+    const visit = await this.db
+      .prepare(visitSelect + ' WHERE v.id=? AND v.deleted_at IS NULL')
       .bind(id)
       .first<Visit>();
+    return visit ? { ...visit, orderDeleted: !!visit.orderDeleted } : null;
   }
   async createVisit(visit: VisitRegistration) {
     await this.db.batch([this.visitInsert(visit), this.audit('programar', 'visita', visit.id)]);
@@ -144,7 +168,7 @@ export class D1PlanningRepository extends D1Repository implements PlanningReposi
         .bind(visit.id, input.result),
       this.db
         .prepare(
-          "UPDATE visits SET status=?,notes=?,order_id=?,completed_at=? WHERE id=? AND status='programada'",
+          "UPDATE visits SET status=?,notes=?,order_id=?,completed_at=? WHERE id=? AND deleted_at IS NULL AND status='programada'",
         )
         .bind(
           input.result,

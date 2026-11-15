@@ -28,6 +28,8 @@ export class ManagementService {
     return { id, ...input };
   }
   async resetPassword(id: string, password: string) {
+    if (!(await this.repository.findUser(id)))
+      fail(404, 'USER_NOT_FOUND', 'Usuario no encontrado.');
     await this.accounts.setPassword(id, password);
     await this.repository.requirePasswordChange(id);
     return { ok: true };

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DeleteRecord from '../components/DeleteRecord.vue';
 import { roleLabels, roles } from '@briochett/contracts';
 import PageHeader from '../components/PageHeader.vue';
 import AppPagination from '../components/AppPagination.vue';
@@ -19,6 +20,7 @@ const {
   edit,
   save,
   resetPassword,
+  load,
 } = useUsers();
 </script>
 <template>
@@ -44,7 +46,10 @@ const {
             <td>{{ u.username }}</td>
             <td>{{ roleLabels[u.role] }}</td>
             <td>{{ u.active ? 'Activo' : 'Desactivado' }}</td>
-            <td><button class="secondary compact" @click="edit(u)">Gestionar</button></td>
+            <td>
+              <button class="secondary compact" @click="edit(u)">Gestionar</button
+              ><DeleteRecord :id="u.id" type="users" :label="u.name" @deleted="load" />
+            </td>
           </tr>
         </tbody>
       </table>

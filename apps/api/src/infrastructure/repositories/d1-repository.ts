@@ -6,6 +6,14 @@ export class D1Repository {
     protected readonly actorId: string,
   ) {}
 
+  protected auditIfChanged(action: string, entity: string, id: string, details: unknown = {}) {
+    return this.db
+      .prepare(
+        'INSERT INTO audit_log(id,actor_id,action,entity_type,entity_id,details_json,created_at) SELECT ?,?,?,?,?,?,? WHERE changes()>0',
+      )
+      .bind(uid(), this.actorId, action, entity, id, JSON.stringify(details), now());
+  }
+
   protected audit(action: string, entity: string, id: string, details: unknown = {}) {
     return this.db
       .prepare(

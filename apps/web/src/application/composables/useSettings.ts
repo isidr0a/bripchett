@@ -41,5 +41,5 @@ export function useSettings() {
       busy.value = false;
     }
   }
-  return { rates, currency, rate, busy, error, success, integration, save };
+  return { rates, currency, rate, busy, error, success, integration, save, load };
 }

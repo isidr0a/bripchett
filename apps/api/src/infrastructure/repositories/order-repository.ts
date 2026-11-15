@@ -2,6 +2,7 @@ import type { Client, Command, Order, QuoteLine } from '@briochett/contracts';
 import type {
   CommandRecord,
   OrderRegistration,
+  IdempotentOrder,
   OrderRepository,
   Pagination,
 } from '../../application/ports';
@@ -53,7 +54,7 @@ function mapOrder(r: OrderRow): Order {
 
 export class D1OrderRepository extends D1Repository implements OrderRepository {
   async list({ page, pageSize, offset }: Pagination, authorId?: string) {
-    const where = authorId ? ' WHERE o.author_id=?' : '',
+    const where = ' WHERE o.deleted_at IS NULL' + (authorId ? ' AND o.author_id=?' : ''),
       args = authorId ? [authorId] : [];
     const [list, total] = await this.db.batch([
       this.db
@@ -70,7 +71,7 @@ export class D1OrderRepository extends D1Repository implements OrderRepository {
   }
   async find(id: string) {
     const row = await this.db
-      .prepare(orderSelect + ' WHERE o.id=?')
+      .prepare(orderSelect + ' WHERE o.id=? AND o.deleted_at IS NULL')
       .bind(id)
       .first<OrderRow>();
     if (!row) return null;
@@ -97,10 +98,10 @@ export class D1OrderRepository extends D1Repository implements OrderRepository {
   findAttempt(authorId: string, key: string) {
     return this.db
       .prepare(
-        'SELECT id,request_hash requestHash FROM orders WHERE author_id=? AND idempotency_key=?',
+        'SELECT id,request_hash requestHash,deleted_at deletedAt FROM orders WHERE author_id=? AND idempotency_key=?',
       )
       .bind(authorId, key)
-      .first<{ id: string; requestHash: string }>();
+      .first<IdempotentOrder>();
   }
   async register({
     id,
@@ -160,7 +161,7 @@ export class D1OrderRepository extends D1Repository implements OrderRepository {
           .bind(d.visitId),
         this.db
           .prepare(
-            "UPDATE visits SET status='con_pedido',order_id=?,completed_at=? WHERE id=? AND status='programada'",
+            "UPDATE visits SET status='con_pedido',order_id=?,completed_at=? WHERE id=? AND deleted_at IS NULL AND status='programada'",
           )
           .bind(id, at, d.visitId),
         this.audit('con_pedido', 'visita', d.visitId),
@@ -171,7 +172,7 @@ export class D1OrderRepository extends D1Repository implements OrderRepository {
     await this.db.batch([
       this.db
         .prepare(
-          "UPDATE orders SET status='validado',updated_at=? WHERE id=? AND status='pendiente'",
+          "UPDATE orders SET status='validado',updated_at=? WHERE id=? AND deleted_at IS NULL AND status='pendiente'",
         )
         .bind(at, id),
       this.db
@@ -186,17 +187,17 @@ export class D1OrderRepository extends D1Repository implements OrderRepository {
     const [result] = await this.db.batch([
       this.db
         .prepare(
-          "UPDATE orders SET status='anulado',updated_at=? WHERE id=? AND status IN('pendiente','validado')",
+          "UPDATE orders SET status='anulado',updated_at=? WHERE id=? AND deleted_at IS NULL AND status IN('pendiente','validado')",
         )
         .bind(at, id),
-      this.audit('anular', 'pedido', id),
+      this.auditIfChanged('anular', 'pedido', id),
     ]);
     return !!result.meta.changes;
   }
   async listCommands({ page, pageSize, offset }: Pagination) {
     const rows = await this.db
       .prepare(
-        "SELECT k.id,k.order_id orderId,k.status,k.created_at createdAt,o.number,c.name clientName,o.notes FROM commands k JOIN orders o ON o.id=k.order_id JOIN clients c ON c.id=o.client_id WHERE o.status<>'anulado' ORDER BY k.created_at DESC LIMIT ? OFFSET ?",
+        "SELECT k.id,k.order_id orderId,k.status,k.created_at createdAt,o.number,c.name clientName,o.notes FROM commands k JOIN orders o ON o.id=k.order_id JOIN clients c ON c.id=o.client_id WHERE o.status<>'anulado' AND o.deleted_at IS NULL ORDER BY k.created_at DESC LIMIT ? OFFSET ?",
       )
       .bind(pageSize, offset)
       .all<Omit<Command, 'items'>>();
@@ -211,7 +212,7 @@ export class D1OrderRepository extends D1Repository implements OrderRepository {
     );
     const total = await this.db
       .prepare(
-        "SELECT count(*) total FROM commands k JOIN orders o ON o.id=k.order_id WHERE o.status<>'anulado'",
+        "SELECT count(*) total FROM commands k JOIN orders o ON o.id=k.order_id WHERE o.status<>'anulado' AND o.deleted_at IS NULL",
       )
       .first<{ total: number }>();
     return { items, total: total?.total || 0, page, pageSize };
@@ -219,7 +220,7 @@ export class D1OrderRepository extends D1Repository implements OrderRepository {
   findCommand(id: string) {
     return this.db
       .prepare(
-        'SELECT k.id,k.order_id orderId,k.status,o.status orderStatus FROM commands k JOIN orders o ON o.id=k.order_id WHERE k.id=?',
+        'SELECT k.id,k.order_id orderId,k.status,o.status orderStatus FROM commands k JOIN orders o ON o.id=k.order_id WHERE k.id=? AND o.deleted_at IS NULL',
       )
       .bind(id)
       .first<CommandRecord>();
@@ -229,12 +230,12 @@ export class D1OrderRepository extends D1Repository implements OrderRepository {
     const [result] = await this.db.batch([
       this.db
         .prepare(
-          'UPDATE commands SET status=?,updated_at=? WHERE id=? AND status=? AND EXISTS(SELECT 1 FROM orders WHERE id=commands.order_id AND status=?)',
+          'UPDATE commands SET status=?,updated_at=? WHERE id=? AND status=? AND EXISTS(SELECT 1 FROM orders WHERE id=commands.order_id AND deleted_at IS NULL AND status=?)',
         )
         .bind(next, at, command.id, command.status, previous),
       this.db
         .prepare(
-          'UPDATE orders SET status=?,updated_at=? WHERE id=? AND status=? AND EXISTS(SELECT 1 FROM commands WHERE id=? AND status=?)',
+          'UPDATE orders SET status=?,updated_at=? WHERE id=? AND deleted_at IS NULL AND status=? AND EXISTS(SELECT 1 FROM commands WHERE id=? AND status=?)',
         )
         .bind(next, at, command.orderId, previous, command.id, next),
       this.audit(next, 'comanda', command.id),

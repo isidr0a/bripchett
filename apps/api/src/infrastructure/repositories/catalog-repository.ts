@@ -61,20 +61,22 @@ function mapClient(row: ClientRow): Client {
 export class D1CatalogRepository extends D1Repository implements CatalogRepository {
   async findClient(id: string) {
     const row = await this.db
-      .prepare(clientSelect + ' WHERE c.id=?')
+      .prepare(clientSelect + ' WHERE c.id=? AND c.deleted_at IS NULL')
       .bind(id)
       .first<ClientRow>();
     return row ? mapClient(row) : null;
   }
   async sellerExists(id: string) {
     return !!(await this.db
-      .prepare("SELECT id FROM user WHERE id=? AND role='vendedor' AND active=1 AND banned=0")
+      .prepare(
+        "SELECT id FROM user WHERE id=? AND role='vendedor' AND active=1 AND banned=0 AND deleted_at IS NULL",
+      )
       .bind(id)
       .first());
   }
   async listClients(query: ClientSearch) {
     const { page, pageSize, offset, sellerId, active, search } = query;
-    const where: string[] = [],
+    const where = ['c.deleted_at IS NULL'],
       args: (string | number)[] = [];
     if (sellerId) {
       where.push('c.seller_id=? AND c.active=1');
@@ -130,7 +132,7 @@ export class D1CatalogRepository extends D1Repository implements CatalogReposito
     await this.db.batch([
       this.db
         .prepare(
-          'UPDATE clients SET name=?,rif=?,contact=?,phone=?,address=?,zone=?,seller_id=?,active=?,geo_json=?,geo_updated_by=?,slots_json=?,recurrence=?,recurrence_start=?,updated_at=? WHERE id=?',
+          'UPDATE clients SET name=?,rif=?,contact=?,phone=?,address=?,zone=?,seller_id=?,active=?,geo_json=?,geo_updated_by=?,slots_json=?,recurrence=?,recurrence_start=?,updated_at=? WHERE id=? AND deleted_at IS NULL',
         )
         .bind(
           d.name,
@@ -149,14 +151,14 @@ export class D1CatalogRepository extends D1Repository implements CatalogReposito
           at,
           id,
         ),
-      this.audit('actualizar', 'cliente', id),
+      this.auditIfChanged('actualizar', 'cliente', id),
     ]);
   }
   async completeClient(id: string, d: CompletionInput, sellerId: string | undefined, at: string) {
     const [result] = await this.db.batch([
       this.db
         .prepare(
-          'UPDATE clients SET name=?,rif=?,contact=?,phone=?,address=?,geo_json=?,geo_updated_by=?,updated_at=? WHERE id=? AND active=1 ' +
+          'UPDATE clients SET name=?,rif=?,contact=?,phone=?,address=?,geo_json=?,geo_updated_by=?,updated_at=? WHERE id=? AND deleted_at IS NULL AND active=1 ' +
             (sellerId ? 'AND seller_id=?' : ''),
         )
         .bind(
@@ -171,12 +173,12 @@ export class D1CatalogRepository extends D1Repository implements CatalogReposito
           id,
           ...(sellerId ? [sellerId] : []),
         ),
-      this.audit('completar_datos', 'cliente', id),
+      this.auditIfChanged('completar_datos', 'cliente', id),
     ]);
     return !!result.meta.changes;
   }
   async listProducts({ page, pageSize, offset, active }: ProductSearch) {
-    const where = active ? ' WHERE active=1' : '';
+    const where = ' WHERE deleted_at IS NULL' + (active ? ' AND active=1' : '');
     const [list, total] = await this.db.batch([
       this.db
         .prepare(productSelect + where + ' ORDER BY name LIMIT ? OFFSET ?')
@@ -192,7 +194,12 @@ export class D1CatalogRepository extends D1Repository implements CatalogReposito
   }
   async findProducts(ids: string[]) {
     const result = await this.db
-      .prepare(productSelect + ' WHERE id IN (' + ids.map(() => '?').join(',') + ')')
+      .prepare(
+        productSelect +
+          ' WHERE deleted_at IS NULL AND id IN (' +
+          ids.map(() => '?').join(',') +
+          ')',
+      )
       .bind(...ids)
       .all<ProductRow>();
     return result.results.map((r) => ({ ...r, active: !!r.active }));
@@ -210,16 +217,18 @@ export class D1CatalogRepository extends D1Repository implements CatalogReposito
   async updateProduct(id: string, d: ProductInput, at: string) {
     const [result] = await this.db.batch([
       this.db
-        .prepare('UPDATE products SET sku=?,name=?,price_usd=?,active=?,updated_at=? WHERE id=?')
+        .prepare(
+          'UPDATE products SET sku=?,name=?,price_usd=?,active=?,updated_at=? WHERE id=? AND deleted_at IS NULL',
+        )
         .bind(d.sku, d.name, d.priceUsd, +d.active, at, id),
-      this.audit('actualizar', 'producto', id),
+      this.auditIfChanged('actualizar', 'producto', id),
     ]);
     return !!result.meta.changes;
   }
   async listRates() {
     const result = await this.db
       .prepare(
-        'SELECT r.id,r.currency,r.rate,r.created_at createdAt,u.name createdBy FROM exchange_rates r JOIN user u ON u.id=r.created_by ORDER BY r.created_at DESC,r.id DESC LIMIT 100',
+        'SELECT r.id,r.currency,r.rate,r.created_at createdAt,u.name createdBy FROM exchange_rates r JOIN user u ON u.id=r.created_by WHERE r.deleted_at IS NULL ORDER BY r.created_at DESC,r.id DESC LIMIT 100',
       )
       .all<Rate>();
     return result.results;
@@ -227,7 +236,7 @@ export class D1CatalogRepository extends D1Repository implements CatalogReposito
   latestRate(currency: Currency) {
     return this.db
       .prepare(
-        'SELECT id,rate FROM exchange_rates WHERE currency=? ORDER BY created_at DESC,id DESC LIMIT 1',
+        'SELECT id,rate FROM exchange_rates WHERE currency=? AND deleted_at IS NULL ORDER BY created_at DESC,id DESC LIMIT 1',
       )
       .bind(currency)
       .first<{ id: string; rate: string }>();

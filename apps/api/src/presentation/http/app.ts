@@ -1,3 +1,4 @@
+import { trashController } from './controllers/trash-controller';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { secureHeaders } from 'hono/secure-headers';
@@ -37,7 +38,7 @@ app.use('/api/*', async (c, next) => {
   const middleware = cors({
     origin: c.env.FRONTEND_ORIGIN,
     credentials: true,
-    allowMethods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
+    allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Idempotency-Key'],
     maxAge: 3600,
   });
@@ -100,6 +101,7 @@ app.route('/api/v1', orderController);
 app.route('/api/v1', planningController);
 app.route('/api/v1', managementController);
 app.route('/api/v1', integrationController);
+app.route('/api/v1', trashController);
 app.notFound((c) =>
   c.json({ error: { code: 'NOT_FOUND', message: 'Recurso no encontrado.' } }, 404),
 );
@@ -117,6 +119,25 @@ app.onError((error, c) => {
     );
   if (error instanceof HTTPException) return error.getResponse();
   const message = String(error.message);
+  const trashErrors: Record<string, string> = {
+    TRASH_USER_DEPENDENCIES:
+      'Resuelve las visitas y rutas pendientes y reasigna o quita los clientes del vendedor.',
+    TRASH_CLIENT_DEPENDENCIES: 'Resuelve las visitas pendientes del cliente antes de eliminarlo.',
+    TRASH_ORDER_STATE: 'Anula el pedido antes de eliminarlo.',
+    TRASH_VISIT_STATE: 'Solo se pueden eliminar visitas pendientes.',
+    TRASH_ROUTE_CLIENT: 'El cliente ya tiene una parada activa en este recorrido.',
+    TRASH_LAST_STOP: 'Esta es la última parada activa. Elimina el recorrido.',
+    TRASH_RESTORE_DEPENDENCY:
+      'La ruta, el cliente o el vendedor asignado no está disponible para esta acción.',
+    TRASHED_RECORD:
+      'El registro o una de sus dependencias ya no está disponible. Actualiza los datos.',
+    LAST_ADMIN: 'Debe quedar al menos un administrador activo.',
+    ROUTE_STARTED: 'El recorrido ya tiene visitas realizadas.',
+    VISIT_DUPLICATE: 'Ya existe una visita activa para ese cliente, vendedor y horario.',
+  };
+  const trashCode = Object.keys(trashErrors).find((code) => message.includes(code));
+  if (trashCode)
+    return c.json({ error: { code: trashCode, message: trashErrors[trashCode] } }, 409);
   if (
     /UNIQUE constraint|constraint failed|ORDER_CLIENT_SCOPE|ORDER_NOT_VALIDATED|LAST_ADMIN|PRODUCT_CHANGED|VISIT_CLIENT_SCOPE|VISIT_DUPLICATE|ROUTE_STARTED|ROUTE_SERIES_CHANGED/i.test(
       message,

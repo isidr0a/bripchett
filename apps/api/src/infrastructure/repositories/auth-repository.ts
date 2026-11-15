@@ -10,7 +10,7 @@ export class D1AuthRepository {
   async sessionUser(id: string): Promise<SessionUser | null> {
     const row = await this.db
       .prepare(
-        'SELECT id,name,email,username,role,active,banned,mustChangePassword FROM user WHERE id=?',
+        'SELECT id,name,email,username,role,active,banned,mustChangePassword FROM user WHERE id=? AND deleted_at IS NULL',
       )
       .bind(id)
       .first<SessionRow>();
@@ -26,7 +26,10 @@ export class D1AuthRepository {
     };
   }
   async passwordChanged(id: string) {
-    await this.db.prepare('UPDATE user SET mustChangePassword=0 WHERE id=?').bind(id).run();
+    await this.db
+      .prepare('UPDATE user SET mustChangePassword=0 WHERE id=? AND deleted_at IS NULL')
+      .bind(id)
+      .run();
   }
   async initialized() {
     return !!(await this.db.prepare('SELECT id FROM user LIMIT 1').first());

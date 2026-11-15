@@ -107,6 +107,7 @@ export class OrderService {
     });
     const existing = await this.repository.findAttempt(this.actor.id, key);
     if (existing) {
+      if (existing.deletedAt) fail(409, 'ORDER_DELETED', 'El pedido original está en la papelera.');
       if (existing.requestHash !== requestHash)
         fail(409, 'IDEMPOTENCY_CONFLICT', 'Este intento ya se utilizó para otro pedido.');
       return { order: await this.get(existing.id), created: false };
@@ -144,6 +145,7 @@ export class OrderService {
     } catch (error) {
       const found = await this.repository.findAttempt(this.actor.id, key);
       if (found) {
+        if (found.deletedAt) fail(409, 'ORDER_DELETED', 'El pedido original está en la papelera.');
         if (found.requestHash !== requestHash)
           fail(409, 'IDEMPOTENCY_CONFLICT', 'El intento pertenece a otro pedido.');
         return { order: await this.get(found.id), created: false };

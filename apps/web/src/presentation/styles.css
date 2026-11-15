@@ -923,3 +923,11 @@ tbody tr:last-child td {
     max-width: 100%;
   }
 }
+
+input[type='radio'] {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+}

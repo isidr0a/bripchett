@@ -1,10 +1,11 @@
 <script setup lang="ts">
+import DeleteRecord from '../components/DeleteRecord.vue';
 import { money } from '@briochett/contracts';
 import PageHeader from '../components/PageHeader.vue';
 import AppPagination from '../components/AppPagination.vue';
 import AppModal from '../components/AppModal.vue';
 import { useProducts } from '../../application/composables/useProducts';
-const { auth, data, page, busy, error, open, selected, saving, formError, form, edit, save } =
+const { auth, data, page, busy, error, open, selected, saving, formError, form, edit, save, load } =
   useProducts();
 </script>
 <template>
@@ -34,6 +35,7 @@ const { auth, data, page, busy, error, open, selected, saving, formError, form, 
             <td>{{ p.active ? 'Activo' : 'Inactivo' }}</td>
             <td v-if="auth.isAdmin">
               <button class="secondary compact" @click="edit(p)">Editar</button>
+              <DeleteRecord :id="p.id" type="products" :label="p.name" @deleted="load" />
             </td>
           </tr>
         </tbody>

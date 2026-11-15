@@ -1,3 +1,5 @@
+import { TrashService } from './application/services/trash-service';
+import { D1TrashRepository } from './infrastructure/repositories/trash-repository';
 import { IntegrationService } from './application/services/integration-service';
 import { DisabledA2Gateway } from './infrastructure/integrations/a2-gateway';
 import type { SessionUser } from '@briochett/contracts';
@@ -27,6 +29,7 @@ export function createServices(
   const catalog = new CatalogService(catalogRepository, actor);
   return {
     catalog,
+    trash: new TrashService(new D1TrashRepository(env.DB, actor.id), catalog, actor),
     integration: new IntegrationService(new DisabledA2Gateway(), catalog),
     orders: new OrderService(
       orderRepository,

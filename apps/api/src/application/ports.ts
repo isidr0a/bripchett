@@ -7,6 +7,7 @@ import type {
   CompletionInput,
   Currency,
   Dashboard,
+  DeletionScope,
   NamedUser,
   Order,
   OrderInput,
@@ -22,6 +23,8 @@ import type {
   SessionUser,
   UserInput,
   UserUpdateInput,
+  TrashType,
+  TrashEntry,
   Visit,
   VisitResultInput,
 } from '@briochett/contracts';
@@ -29,7 +32,7 @@ import type {
 export type Pagination = { page: number; pageSize: number; offset: number };
 export type ClientSearch = Pagination & { sellerId?: string; active: boolean; search?: string };
 export type ProductSearch = Pagination & { active: boolean };
-export type IdempotentOrder = { id: string; requestHash: string };
+export type IdempotentOrder = { id: string; requestHash: string; deletedAt: string | null };
 export type OrderRecord = Order & { clientSnapshot: Client };
 export type CommandRecord = {
   id: string;
@@ -153,4 +156,12 @@ export interface A2Gateway {
   pushClient(clientId: string): Promise<unknown>;
   pushOrder(orderId: string): Promise<unknown>;
   getAccountStatement(clientId: string): Promise<unknown>;
+}
+
+export type RestoreVisit = Pick<Visit, 'id' | 'clientId' | 'sellerId' | 'scheduledAt'>;
+export interface TrashRepository {
+  list(pagination: Pagination, type?: TrashType): Promise<Page<TrashEntry>>;
+  remove(type: TrashType, id: string, scope: DeletionScope, at: string): Promise<number | null>;
+  restoreVisits(type: 'routes' | 'visits', id: string): Promise<RestoreVisit[]>;
+  restore(type: TrashType, id: string, clientVersions: Record<string, string>): Promise<boolean>;
 }

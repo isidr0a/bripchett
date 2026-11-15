@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DeleteRecord from '../components/DeleteRecord.vue';
 import { money, statusLabels } from '@briochett/contracts';
 import PageHeader from '../components/PageHeader.vue';
 import AppPagination from '../components/AppPagination.vue';
@@ -41,7 +42,16 @@ const { auth, data, page, busy, error, load, creating, detail, working, message,
             <td>
               <span class="badge" :class="o.status">{{ statusLabels[o.status] }}</span>
             </td>
-            <td><button class="secondary compact" @click="show(o.id)">Ver pedido</button></td>
+            <td>
+              <button class="secondary compact" @click="show(o.id)">Ver pedido</button
+              ><DeleteRecord
+                v-if="o.status === 'anulado'"
+                :id="o.id"
+                type="orders"
+                :label="'Pedido #' + o.number"
+                @deleted="load"
+              />
+            </td>
           </tr>
         </tbody>
       </table>

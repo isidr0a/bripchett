@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DeleteRecord from '../components/DeleteRecord.vue';
 import { statusLabels } from '@briochett/contracts';
 import PageHeader from '../components/PageHeader.vue';
 import AppPagination from '../components/AppPagination.vue';
@@ -81,6 +82,17 @@ const {
           <button class="secondary" @click="repeatRoute(r)">
             {{ r.seriesId ? 'Crear otra repetición' : 'Repetir ruta' }}
           </button>
+          <DeleteRecord
+            v-if="r.seriesId || r.stops.every((stop) => stop.status === 'programada')"
+            :id="r.id"
+            type="routes"
+            :label="r.name + ' · ' + r.date"
+            :recurring="!!r.seriesId"
+            @deleted="
+              routes.load();
+              visits.load();
+            "
+          />
         </div>
         <ol class="route-stops">
           <li v-for="s in r.stops" :key="s.visitId">
@@ -123,6 +135,16 @@ const {
               <button class="secondary compact" @click="showVisit(v)">
                 {{ v.status === 'programada' && auth.canSell ? 'Registrar visita' : 'Ver detalle' }}
               </button>
+              <DeleteRecord
+                v-if="v.status === 'programada'"
+                :id="v.id"
+                type="visits"
+                :label="v.clientName + ' · ' + dateTime(v.scheduledAt)"
+                @deleted="
+                  routes.load();
+                  visits.load();
+                "
+              />
             </td>
           </tr>
         </tbody>
@@ -311,7 +333,13 @@ const {
         </form></template
       ><template v-else
         ><p>{{ visit.notes || 'Sin observaciones.' }}</p>
-        <p v-if="visit.orderId" class="muted">Esta visita tiene un pedido registrado.</p></template
+        <p v-if="visit.orderId" class="muted">
+          {{
+            visit.orderDeleted
+              ? 'El pedido asociado está en la papelera.'
+              : 'Esta visita tiene un pedido registrado.'
+          }}
+        </p></template
       >
     </div></AppModal
   ><OrderWizard

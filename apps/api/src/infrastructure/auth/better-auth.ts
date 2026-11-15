@@ -65,7 +65,9 @@ export function createAuth(env: Bindings) {
       session: {
         create: {
           before: async (session) => {
-            const u = await env.DB.prepare('SELECT active,banned FROM user WHERE id=?')
+            const u = await env.DB.prepare(
+              'SELECT active,banned FROM user WHERE id=? AND deleted_at IS NULL',
+            )
               .bind(session.userId)
               .first<{ active: number; banned: number }>();
             if (!u?.active || u.banned)

@@ -89,5 +89,6 @@ export function useUsers() {
     edit,
     save,
     resetPassword,
+    load,
   };
 }

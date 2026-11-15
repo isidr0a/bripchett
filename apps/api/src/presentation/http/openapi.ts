@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  trashTypes,
   clientSchema,
   completionSchema,
   productSchema,
@@ -16,14 +17,14 @@ type Parameter = {
   name: string;
   in: string;
   required?: boolean;
-  schema: { type: string; format?: string };
+  schema: { type: string; format?: string; enum?: readonly string[]; default?: string | number };
 };
 type Operation = {
   summary: string;
   security: { sessionCookie: never[] }[];
   parameters?: Parameter[];
   requestBody?: unknown;
-  responses: Record<string, { description: string }>;
+  responses: Record<string, { description: string; content?: unknown }>;
 };
 const paths: Record<string, Record<string, Operation>> = {};
 function operation(path: string, method: string, summary: string, schema?: z.ZodType) {
@@ -144,6 +145,49 @@ operation(
 );
 operation('/api/v1/clients/{id}/a2', 'post', 'Enviar alta de cliente; integración pendiente');
 operation('/api/v1/orders/{id}/a2', 'post', 'Enviar pedido; integración pendiente');
+const affectedSchema = z.toJSONSchema(z.object({ affected: z.number().int().nonnegative() }));
+const trashEntrySchema = z.object({
+  id: z.string(),
+  type: z.enum(trashTypes),
+  label: z.string(),
+  context: z.string().nullable(),
+  deletedAt: z.iso.datetime(),
+  deletedByName: z.string(),
+});
+const jsonContent = (schema: unknown) => ({ 'application/json': { schema } });
+for (const type of trashTypes) {
+  const path = '/api/v1/' + type + '/{id}';
+  operation(path, 'delete', 'Mover a la papelera (solo Administración)');
+  paths[path].delete.responses[200].content = jsonContent(affectedSchema);
+}
+paths['/api/v1/routes/{id}'].delete.parameters?.push({
+  name: 'scope',
+  in: 'query',
+  schema: { type: 'string', enum: ['date', 'upcoming'], default: 'date' },
+});
+operation('/api/v1/trash', 'get', 'Consultar la papelera (solo Administración)');
+paths['/api/v1/trash'].get.parameters = [
+  { name: 'type', in: 'query', schema: { type: 'string', enum: trashTypes } },
+  { name: 'page', in: 'query', schema: { type: 'integer', default: 1 } },
+];
+paths['/api/v1/trash'].get.responses[200].content = jsonContent(
+  z.toJSONSchema(
+    z.object({
+      items: z.array(trashEntrySchema),
+      total: z.number().int(),
+      page: z.number().int(),
+      pageSize: z.number().int(),
+    }),
+  ),
+);
+const restorePath = '/api/v1/trash/{type}/{id}/restore';
+operation(restorePath, 'post', 'Restaurar un registro (solo Administración)');
+const restoreType = paths[restorePath].post.parameters?.find(
+  (parameter) => parameter.name === 'type',
+);
+if (restoreType) restoreType.schema.enum = trashTypes;
+paths[restorePath].post.responses[200].content = jsonContent(affectedSchema);
+
 export const openapi = {
   openapi: '3.1.0',
   info: {
