@@ -2,7 +2,15 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { orderSchema, quoteSchema } from '@briochett/contracts';
 import type { AppEnv } from '../types';
-import { adminOnly, allow, body, pagination, salesOnly, viewRoles } from '../helpers';
+import {
+  adminOnly,
+  allow,
+  body,
+  commandAccess,
+  pagination,
+  salesOnly,
+  viewRoles,
+} from '../helpers';
 import { fail } from '../../../domain/errors';
 
 export const orderController = new Hono<AppEnv>();
@@ -29,7 +37,7 @@ orderController.post('/orders/:id/validate', adminOnly, async (c) =>
 orderController.post('/orders/:id/cancel', adminOnly, async (c) =>
   c.json(await c.get('services').orders.cancel(c.req.param('id'))),
 );
-orderController.get('/commands', allow('administracion', 'preparacion', 'supervision'), async (c) =>
+orderController.get('/commands', commandAccess, async (c) =>
   c.json(await c.get('services').orders.commands(pagination(c))),
 );
 orderController.post('/commands/:id/advance', allow('administracion', 'preparacion'), async (c) =>

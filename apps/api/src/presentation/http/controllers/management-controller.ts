@@ -1,8 +1,13 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { userSchema, userUpdateSchema } from '@briochett/contracts';
+import {
+  productionFiltersSchema,
+  productionOptionsQuerySchema,
+  userSchema,
+  userUpdateSchema,
+} from '@briochett/contracts';
 import type { AppEnv } from '../types';
-import { adminOnly, allow, body, pagination, viewRoles } from '../helpers';
+import { adminOnly, allow, body, commandAccess, pagination, viewRoles } from '../helpers';
 import { fail } from '../../../domain/errors';
 
 const passwordSchema = z.object({ password: z.string().min(10).max(128) });
@@ -41,6 +46,18 @@ managementController.get('/reports', allow('administracion', 'supervision'), asy
   const result = reportSchema.safeParse(c.req.query());
   if (!result.success) fail(422, 'REPORT_DATES', 'Selecciona fechas válidas para el reporte.');
   return c.json(await c.get('services').management.report(result.data));
+});
+managementController.get('/reports/production', commandAccess, async (c) => {
+  const result = productionFiltersSchema.safeParse(c.req.query());
+  if (!result.success)
+    fail(422, 'PRODUCTION_FILTERS', 'Revisa las fechas y los filtros de producción.');
+  return c.json(await c.get('services').productionReport.totals(result.data));
+});
+managementController.get('/reports/production/options', commandAccess, async (c) => {
+  const result = productionOptionsQuerySchema.safeParse(c.req.query());
+  if (!result.success)
+    fail(422, 'PRODUCTION_FILTERS', 'Revisa las fechas y los filtros de producción.');
+  return c.json(await c.get('services').productionReport.options(result.data, pagination(c)));
 });
 managementController.get('/audit', adminOnly, async (c) =>
   c.json(await c.get('services').management.audit(pagination(c))),

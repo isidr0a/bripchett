@@ -18,6 +18,8 @@ import { D1CatalogRepository } from './infrastructure/repositories/catalog-repos
 import { D1OrderRepository } from './infrastructure/repositories/order-repository';
 import { D1PlanningRepository } from './infrastructure/repositories/planning-repository';
 import { D1ManagementRepository } from './infrastructure/repositories/management-repository';
+import { ProductionReportService } from './application/services/production-report-service';
+import { D1ProductionReportRepository } from './infrastructure/repositories/production-report-repository';
 
 export function createServices(
   env: Bindings,
@@ -43,6 +45,9 @@ export function createServices(
       actor,
     ),
     planning: new PlanningService(planningRepository, orderRepository, catalog, actor, zones),
+    productionReport: new ProductionReportService(
+      new D1ProductionReportRepository(env.DB, actor.id),
+    ),
     management: new ManagementService(
       new D1ManagementRepository(env.DB, actor.id),
       new BetterAuthAccountGateway(auth, headers),

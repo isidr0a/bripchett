@@ -6,6 +6,10 @@ import {
   zoneSchema,
   completionSchema,
   productSchema,
+  productionOptionTypes,
+  productionOptionsPageSchema,
+  productionReportSchema,
+  productionStates,
   rateSchema,
   userSchema,
   userUpdateSchema,
@@ -18,6 +22,7 @@ import {
 type Parameter = {
   name: string;
   in: string;
+  description?: string;
   required?: boolean;
   schema: { type: string; format?: string; enum?: readonly string[]; default?: string | number };
 };
@@ -162,6 +167,65 @@ paths['/api/v1/reports'].get.parameters = ['from', 'to', 'sellerId'].map((name) 
   required: name !== 'sellerId',
   schema: { type: 'string' },
 }));
+const productionPath = '/api/v1/reports/production';
+const productionQuery: Parameter[] = [
+  { name: 'from', in: 'query', schema: { type: 'string', format: 'date' } },
+  { name: 'to', in: 'query', schema: { type: 'string', format: 'date' } },
+  {
+    name: 'state',
+    in: 'query',
+    schema: { type: 'string', enum: productionStates, default: 'open' },
+  },
+  {
+    name: 'zone',
+    in: 'query',
+    description: 'Valor del selector de zona: zone:<id>, legacy:<nombre> o pending.',
+    schema: { type: 'string' },
+  },
+  {
+    name: 'route',
+    in: 'query',
+    description: 'Valor del selector de ruta: route:<id>, series:<id> o none.',
+    schema: { type: 'string' },
+  },
+  {
+    name: 'clientId',
+    in: 'query',
+    description: 'Valor del selector de cliente.',
+    schema: { type: 'string' },
+  },
+];
+for (const [suffix, summary, response] of [
+  [
+    '',
+    'Consolidar unidades por producto según la fecha de emisión en Caracas',
+    productionReportSchema,
+  ],
+  [
+    '/options',
+    'Buscar zonas, recorridos, series y clientes en las comandas del reporte',
+    productionOptionsPageSchema,
+  ],
+] as const) {
+  const path = productionPath + suffix;
+  operation(path, 'get', summary + ' (Administración, Preparación y Supervisión)');
+  paths[path].get.parameters = suffix
+    ? [
+        ...productionQuery,
+        {
+          name: 'type',
+          in: 'query',
+          required: true,
+          schema: { type: 'string', enum: productionOptionTypes },
+        },
+        { name: 'q', in: 'query', schema: { type: 'string' } },
+        { name: 'page', in: 'query', schema: { type: 'integer', default: 1 } },
+      ]
+    : productionQuery;
+  paths[path].get.responses[200].content = {
+    'application/json': { schema: z.toJSONSchema(response) },
+  };
+}
 paths['/api/v1/orders'].post.parameters = [
   {
     name: 'Idempotency-Key',

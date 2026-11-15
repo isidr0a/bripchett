@@ -128,6 +128,42 @@ async function oldZoneFixtures() {
       .bind(id, route, client, time, status, at)
       .run();
 }
+async function legacyProductionFixtures() {
+  const at = '2026-05-02T13:00:00.000Z';
+  await db
+    .prepare(
+      "UPDATE clients SET rif='J-'||id,contact='Compras',phone='00000000',address='Ejemplo',geo_json='{}' WHERE seller_id='legacy-seller'",
+    )
+    .run();
+  await db
+    .prepare(
+      "INSERT INTO products(id,sku,name,price_usd,created_at,updated_at) VALUES('legacy-pan','LEGACY-PAN','Pan histórico','1.00',?,?)",
+    )
+    .bind(at, at)
+    .run();
+  for (const [id, customer, zone] of [
+    ['legacy-report-a', 'legacy-a', '  ÁREA   Norte  '],
+    ['legacy-report-b', 'legacy-b', 'área norte'],
+    ['legacy-report-c', 'legacy-c', 'Zona anterior'],
+    ['legacy-report-d', 'legacy-none', '   '],
+  ]) {
+    await db.batch([
+      db
+        .prepare(
+          "INSERT INTO orders(id,client_id,author_id,currency,rate,total_minor,total_usd_minor,units,status,client_snapshot,idempotency_key,request_hash,created_at,updated_at) VALUES(?,?,'legacy-seller','USD','1',100,100,1,'validado',?,?,?,?,?)",
+        )
+        .bind(id, customer, JSON.stringify({ zone }), id, id, at, at),
+      db
+        .prepare(
+          "INSERT INTO order_items(id,order_id,product_id,name,sku,quantity,price_usd,unit_minor,subtotal_minor) VALUES(?,?,'legacy-pan','Pan histórico','LEGACY-PAN',1,'1.00',100,100)",
+        )
+        .bind(id, id),
+      db
+        .prepare('INSERT INTO commands(id,order_id,created_at,updated_at) VALUES(?,?,?,?)')
+        .bind(id, id, at, at),
+    ]);
+  }
+}
 beforeAll(async () => {
   mf = new Miniflare(
     convertV4MiniflareOptions({
@@ -153,8 +189,10 @@ beforeAll(async () => {
     '0004_route_series_guard.sql',
     '0005_soft_delete.sql',
     '0006_commercial_zones.sql',
+    '0007_production_report.sql',
   ]) {
     if (file === '0006_commercial_zones.sql') await oldZoneFixtures();
+    if (file === '0007_production_report.sql') await legacyProductionFixtures();
     const sql = await readFile(new URL('../apps/api/migrations/' + file, import.meta.url), 'utf8');
     const lines = sql.split('\n'),
       statements: string[] = [];
@@ -1543,5 +1581,311 @@ describe('Zonas comerciales', () => {
     expect((await call('clients/' + moving.id, 'PATCH', moving.input)).status).toBe(200);
     expect((await call('trash/routes/' + alone.id + '/restore', 'POST')).status).toBe(200);
     expect((await call('visits/' + alone.stops[0].id)).status).toBe(200);
+  });
+});
+
+describe('Totales de producción', () => {
+  const path = '/api/v1/reports/production';
+  const day = { from: '2027-02-09', to: '2027-02-09' };
+  let north: string, south: string, seriesId: string, oldZone: string;
+  let customer: { id: string; code: string }, second: { id: string };
+  let conversion: { id: string }, direct: { id: string };
+  let routes: { id: string; stops: { visitId: string }[] }[];
+  const get = (params: Record<string, string> = day, role = 'administracion') =>
+    request(path + '?' + new URLSearchParams(params), role);
+  const options = (type: string, filters: Record<string, string> = day, role = 'preparacion') =>
+    request(path + '/options?' + new URLSearchParams({ type, ...filters }), role);
+
+  async function order(
+    clientId: string,
+    quantity: number,
+    issued: string,
+    extras: {
+      visitId?: string;
+      multi?: boolean;
+      cancellation?: 'anulado' | 'eliminado';
+      noCommand?: boolean;
+    } = {},
+  ) {
+    const body = {
+      clientId,
+      items: [
+        { productId: product.id, quantity },
+        ...(extras.multi ? [{ productId: conversion.id, quantity: 4 }] : []),
+      ],
+      currency: 'USD',
+      visitId: extras.visitId,
+      notes: '',
+    };
+    const quote = await request('/api/v1/orders/quote', 'vendedor', 'POST', body);
+    expect(quote.status, JSON.stringify(quote.body)).toBe(200);
+    const created = await request(
+      '/api/v1/orders',
+      'vendedor',
+      'POST',
+      { ...body, quoteVersion: quote.body.version },
+      { 'Idempotency-Key': randomUUID() },
+    );
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const id: string = created.body.id;
+    if (extras.noCommand) return { id };
+    expect(
+      (await request('/api/v1/orders/' + id + '/validate', 'administracion', 'POST')).status,
+    ).toBe(200);
+    await db.prepare('UPDATE commands SET created_at=? WHERE order_id=?').bind(issued, id).run();
+    if (extras.cancellation) {
+      expect(
+        (await request('/api/v1/orders/' + id + '/cancel', 'administracion', 'POST')).status,
+      ).toBe(200);
+      if (extras.cancellation === 'eliminado')
+        expect((await request('/api/v1/orders/' + id, 'administracion', 'DELETE')).status).toBe(
+          200,
+        );
+    }
+    return { id };
+  }
+
+  beforeAll(async () => {
+    north = (
+      await request('/api/v1/zones', 'administracion', 'POST', { name: 'Norte de fabricación' })
+    ).body.id;
+    south = (
+      await request('/api/v1/zones', 'administracion', 'POST', { name: 'Sur de fabricación' })
+    ).body.id;
+    customer = (
+      await request('/api/v1/clients', 'administracion', 'POST', {
+        ...baseClient('Tienda Producción', users.vendedor.id),
+        zoneId: north,
+      })
+    ).body;
+    second = (
+      await request('/api/v1/clients', 'administracion', 'POST', {
+        ...baseClient('Taller Producción', users.vendedor.id),
+        zoneId: south,
+      })
+    ).body;
+    conversion = (
+      await request('/api/v1/products', 'administracion', 'POST', {
+        sku: 'PROD-02',
+        name: 'Pan de producción',
+        priceUsd: '0.50',
+      })
+    ).body;
+    const series = await request('/api/v1/routes', 'administracion', 'POST', {
+      name: 'Ruta fábrica',
+      zoneId: north,
+      sellerId: users.vendedor.id,
+      date: '2027-02-07',
+      stops: [{ clientId: customer.id, time: '13:00' }],
+      recurrence: { frequency: 'semanal', until: '2027-02-14' },
+    });
+    expect(series.status).toBe(201);
+    seriesId = series.body.seriesId;
+    const occurrences = await db
+      .prepare(
+        'SELECT r.id,v.id visitId FROM routes r JOIN visits v ON v.route_id=r.id WHERE r.series_id=? ORDER BY r.date',
+      )
+      .bind(seriesId)
+      .all<{ id: string; visitId: string }>();
+    routes = occurrences.results.map(({ id, visitId }) => ({ id, stops: [{ visitId }] }));
+    expect(routes).toHaveLength(2);
+    await order(customer.id, 2, '2027-02-09T04:00:00.000Z', {
+      visitId: routes[0].stops[0].visitId,
+      multi: true,
+    });
+    const other = await order(customer.id, 3, '2027-02-10T03:59:59.999Z', {
+      visitId: routes[1].stops[0].visitId,
+    });
+    const command = await db
+      .prepare('SELECT id FROM commands WHERE order_id=?')
+      .bind(other.id)
+      .first<{ id: string }>();
+    expect(
+      (await request('/api/v1/commands/' + command?.id + '/advance', 'preparacion', 'POST')).status,
+    ).toBe(200);
+
+    const visit = await request('/api/v1/visits', 'vendedor', 'POST', {
+      clientId: second.id,
+      scheduledAt: '2027-02-10T10:00:00.000Z',
+    });
+    expect(visit.status).toBe(201);
+    direct = await order(second.id, 7, '2027-02-09T14:00:00.000Z', { visitId: visit.body.id });
+    await order(second.id, 8, '2027-02-09T03:59:59.999Z');
+    await order(second.id, 9, '2027-02-10T04:00:00.000Z');
+    await order(second.id, 30, '2027-02-09T16:00:00.000Z', { cancellation: 'anulado' });
+    await order(second.id, 50, '2027-02-09T17:00:00.000Z', { cancellation: 'eliminado' });
+    await order(second.id, 99, '2027-02-09T18:00:00.000Z', { noCommand: true });
+
+    expect(
+      (
+        await request('/api/v1/clients/' + customer.id, 'administracion', 'PATCH', {
+          ...baseClient('Tienda Producción', users.vendedor.id),
+          zoneId: south,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await request('/api/v1/zones/' + north, 'administracion', 'PATCH', {
+          name: 'Norte renombrado',
+          active: false,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (await request('/api/v1/products/' + conversion.id, 'administracion', 'DELETE')).status,
+    ).toBe(200);
+    expect(
+      (await request('/api/v1/clients/' + customer.id, 'administracion', 'DELETE')).status,
+    ).toBe(200);
+    const legacy = await db
+      .prepare("SELECT zone_id id FROM clients WHERE id='legacy-a'")
+      .first<{ id: string }>();
+    oldZone = legacy!.id;
+    expect(
+      (
+        await request('/api/v1/zones/' + oldZone, 'administracion', 'PATCH', {
+          name: 'Zona renombrada de legado',
+        })
+      ).status,
+    ).toBe(200);
+  });
+
+  it('totaliza partidas, cuenta comandas distintas y respeta el día de emisión en Caracas', async () => {
+    const report = await get({}, 'preparacion');
+    expect(report.status).toBe(200);
+    expect(report.body.totals.units).toBeGreaterThan(16);
+    const selected = await get();
+    expect(selected).toMatchObject({
+      status: 200,
+      body: {
+        totals: { units: 16, products: 2, commands: 3 },
+        items: [
+          { productId: product.id, units: 12, commands: 3 },
+          { productId: conversion.id, units: 4, commands: 1 },
+        ],
+      },
+    });
+    expect((await get({ to: '2027-02-08' })).body.totals.units).toBeGreaterThanOrEqual(8);
+    expect((await get({ from: '2027-02-10', clientId: second.id })).body.totals.units).toBe(9);
+    expect((await get({ from: '2027-02-10', to: '2027-02-09' })).status).toBe(422);
+    expect((await get({ from: '2027-02-30' })).status).toBe(422);
+  });
+
+  it('combina zona histórica, fecha de recorrido, serie, cliente y pedidos sin recorrido', async () => {
+    const filters = { ...day, zone: 'zone:' + north, clientId: customer.id };
+    expect((await get({ ...filters, route: 'route:' + routes[0].id })).body.totals.units).toBe(6);
+    expect((await get({ ...filters, route: 'series:' + seriesId })).body.totals.units).toBe(9);
+    expect(
+      (await get({ ...day, zone: 'zone:' + south, route: 'none', clientId: second.id })).body.totals
+        .units,
+    ).toBe(7);
+    expect((await get({ ...filters, zone: 'zone:' + south })).body).toEqual({
+      totals: { units: 0, products: 0, commands: 0 },
+      items: [],
+    });
+    expect((await options('zone')).body.items).toContainEqual({
+      value: 'zone:' + north,
+      label: 'Norte de fabricación',
+    });
+    const matching = await options('route', {
+      ...day,
+      q: 'fábrica',
+      clientId: customer.id,
+      zone: 'zone:' + north,
+    });
+    expect(matching.body.items.map((option: { value: string }) => option.value)).toEqual([
+      'route:' + routes[0].id,
+      'route:' + routes[1].id,
+      'series:' + seriesId,
+    ]);
+    expect((await options('client', { ...day, q: customer.code })).body.items).toEqual([
+      { value: customer.id, label: 'Tienda Producción · ' + customer.code },
+    ]);
+    expect((await options('client', { ...day, q: 'TIENDA PRODUCCION' })).body.items).toHaveLength(
+      1,
+    );
+  });
+
+  it('mantiene las zonas históricas y distingue la zona pendiente', async () => {
+    const date = { from: '2026-05-02', to: '2026-05-02' };
+    const legacy = await get({ ...date, zone: 'zone:' + oldZone });
+    expect(legacy.body.totals.units).toBe(2);
+    expect((await get({ ...date, zone: 'legacy:zona anterior' })).body.totals.units).toBe(1);
+    expect((await get({ ...date, zone: 'pending' })).body.totals.units).toBe(1);
+    expect(
+      (await options('zone', date)).body.items
+        .map((option: { value: string }) => option.value)
+        .sort(),
+    ).toEqual(['legacy:zona anterior', 'pending', 'zone:' + oldZone]);
+  });
+
+  it('actualiza filtros de estado y aplica los permisos de Comandas', async () => {
+    for (const role of ['administracion', 'preparacion', 'supervision']) {
+      expect((await get(day, role)).status).toBe(200);
+      expect((await options('client', day, role)).status).toBe(200);
+    }
+    expect((await get(day, 'vendedor')).status).toBe(403);
+    expect((await options('zone', day, 'vendedor')).status).toBe(403);
+    expect((await get(day, 'invitado')).status).toBe(401);
+    const filters = { ...day, clientId: second.id };
+    const id = await db
+      .prepare('SELECT id FROM commands WHERE order_id=?')
+      .bind(direct.id)
+      .first<{ id: string }>();
+    for (const state of ['en_preparacion', 'listo']) {
+      expect(
+        (await request('/api/v1/commands/' + id?.id + '/advance', 'preparacion', 'POST')).status,
+      ).toBe(200);
+      expect((await get({ ...filters, state })).body.totals.units).toBe(7);
+    }
+    expect((await get(filters)).body.totals.units).toBe(0);
+    expect((await get({ ...filters, state: 'all' })).body.totals.units).toBe(7);
+  });
+
+  it('pagina las opciones de cliente y trata los signos de búsqueda como literales', async () => {
+    const at = '2027-03-25T15:00:00.000Z';
+    for (let i = 0; i < 21; i++) {
+      const id = 'prod-page-' + String(i).padStart(2, '0');
+      await db.batch([
+        db
+          .prepare(
+            "INSERT INTO clients(id,code,name,zone_id,seller_id,recurrence_start,created_at,updated_at) VALUES(?,?,?, ?,?,'2026-01-01',?,?)",
+          )
+          .bind(id, id, 'Comercio % ' + id, south, users.vendedor.id, at, at),
+        db
+          .prepare(
+            "INSERT INTO orders(id,client_id,author_id,currency,rate,total_minor,total_usd_minor,units,status,client_snapshot,idempotency_key,request_hash,created_at,updated_at) VALUES(?, ?,?,'USD','1',100,100,1,'validado',?,?,?,?,?)",
+          )
+          .bind(
+            id,
+            id,
+            users.administracion.id,
+            JSON.stringify({ zoneId: south, zone: 'Sur de fabricación' }),
+            id,
+            id,
+            at,
+            at,
+          ),
+        db
+          .prepare('INSERT INTO commands(id,order_id,created_at,updated_at) VALUES(?,?,?,?)')
+          .bind(id, id, at, at),
+        db
+          .prepare(
+            "INSERT INTO order_items(id,order_id,product_id,name,sku,quantity,price_usd,unit_minor,subtotal_minor) VALUES(?,?,'legacy-pan','Pan histórico','LEGACY-PAN',1,'1.00',100,100)",
+          )
+          .bind(id, id),
+      ]);
+    }
+    const params = { from: '2027-03-25', to: '2027-03-25', q: 'Comercio %' };
+    const first = await options('client', params);
+    const secondPage = await options('client', { ...params, page: '2' });
+    expect(first.body.total).toBe(21);
+    expect(first.body.items).toHaveLength(20);
+    expect(secondPage.body.items).toHaveLength(1);
+    expect(first.body.items).not.toContainEqual(secondPage.body.items[0]);
+    expect((await options('client', { ...params, q: '_' })).body.total).toBe(0);
+    expect((await options('client', { ...params, page: '0' })).status).toBe(422);
+    expect((await options('invalid', params)).status).toBe(422);
   });
 });

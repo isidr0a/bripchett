@@ -29,6 +29,7 @@ export const allow =
 export const viewRoles: Role[] = ['administracion', 'vendedor', 'supervision'];
 export const adminOnly = allow('administracion');
 export const salesOnly = allow('administracion', 'vendedor');
+export const commandAccess = allow('administracion', 'preparacion', 'supervision');
 export function pagination(context: Context<AppEnv>) {
   const page = Number(context.req.query('page') || 1);
   if (!Number.isSafeInteger(page) || page < 1 || page > 100000)

@@ -14,6 +14,10 @@ import type {
   Page,
   Product,
   ProductInput,
+  ProductionFilters,
+  ProductionOption,
+  ProductionOptionsQuery,
+  ProductionReport,
   Quote,
   Rate,
   RateInput,
@@ -97,6 +101,15 @@ export type ReportRange = {
   end: string;
   sellerId?: string;
 };
+type ProductionIssueRange = { start?: string; end?: string };
+export type ProductionReportRange = ProductionFilters & ProductionIssueRange;
+export interface ProductionReportRepository {
+  totals(filters: ProductionReportRange): Promise<ProductionReport>;
+  options(
+    query: ProductionOptionsQuery & ProductionIssueRange,
+    pagination: Pagination,
+  ): Promise<Page<ProductionOption>>;
+}
 
 export interface CatalogRepository {
   findClient(id: string): Promise<Client | null>;
