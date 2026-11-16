@@ -1,28 +1,29 @@
 {
-  "verifiedAt": "2026-11-01T21:15:50.151Z",
+  "verifiedAt": "2026-11-16T23:39:43.805Z",
   "timezone": "America/Caracas",
-  "sourceCommit": "9a7cdaeec7ffdeb87371817c89431fa501bb8e5c",
+  "sourceCommit": "88320e0190f739676b237df64ff416bd9cb7e243",
   "frontend": {
     "platform": "Cloudflare Pages",
     "project": "briochett-app",
     "branch": "main",
     "url": "https://app.briochettvzla.com",
-    "deploymentId": "cc50fe73-b4b8-4065-8fbc-ece34712d447",
-    "deploymentUrl": "https://cc50fe73.briochett-app.pages.dev",
+    "deploymentId": "94d7857a-54c8-4b9f-b06d-fd6e29a40e8c",
+    "deploymentUrl": "https://94d7857a.briochett-app.pages.dev",
     "httpsVerified": true,
     "directSpaRouteStatus": 200,
     "productionBundleMatches": true,
-    "entryAsset": "/assets/index-BLG4RfyR.js",
-    "recurrenceUiPresent": true
+    "entryAsset": "/assets/index-Wjmy5aFP.js",
+    "productionReportAsset": "/assets/CommandsView-B6qKskrv.js"
   },
   "backend": {
     "platform": "Cloudflare Workers",
     "worker": "briochett-api",
     "url": "https://api.briochettvzla.com",
-    "versionId": "991f627d-ab8e-453b-bc26-f114a0875815",
+    "versionId": "70c6474e-f753-4f94-b426-35d550cd6d06",
     "healthStatus": 200,
     "openapiUrl": "https://api.briochettvzla.com/api/v1/openapi.json",
-    "bootstrapSecretRemoved": true
+    "bootstrapSecretRemoved": true,
+    "productionReportEndpointsVerified": true
   },
   "database": {
     "platform": "Cloudflare D1",
@@ -32,7 +33,10 @@
       "0001_initial.sql",
       "0002_concurrency_guards.sql",
       "0003_recurring_routes.sql",
-      "0004_route_series_guard.sql"
+      "0004_route_series_guard.sql",
+      "0005_soft_delete.sql",
+      "0006_commercial_zones.sql",
+      "0007_production_report.sql"
     ],
     "recoveryPointRecorded": true,
     "countsPreserved": true,
@@ -42,25 +46,28 @@
       "products": 0,
       "orders": 0,
       "routes": 0,
-      "visits": 0
+      "visits": 0,
+      "commands": 0
     }
   },
   "verification": {
-    "automatedTestsPassed": 53,
-    "ciUrl": "https://github.com/isidr0a/bripchett/actions/runs/41338068815",
+    "automatedTestsPassed": 68,
+    "ciUrl": "https://github.com/isidr0a/bripchett/actions/runs/43760677415",
     "typeChecksPassed": true,
     "lintersPassed": true,
     "productionBuildPassed": true,
-    "authenticatedBrowserSessionVerified": true,
-    "authenticatedDashboardLoaded": true,
-    "recurrenceControlsVerified": true,
+    "authenticatedReportDataVerified": false,
+    "anonymousReportRequestsRejected": true,
     "credentialedCorsOrigin": "https://app.briochettvzla.com",
-    "preflightStatus": 204,
-    "foreignWriteStatus": 403,
-    "anonymousClientStatus": 401,
-    "bootstrapDisabledStatus": 404,
-    "browserConsoleErrors": 0,
     "marketingSiteStatus": 200
+  },
+  "pending": {
+    "recordPhotos": {
+      "sourceCommit": "7cff68ff66c1f7eaa463af55d2d360137ddafad2",
+      "migration": "0008_record_photos.sql",
+      "bucket": "briochett-sistema-photos",
+      "reason": "Cloudflare devolvió el código 10042. R2 está pendiente de activación."
+    }
   },
   "a2": {
     "enabled": false,
