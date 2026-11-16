@@ -20,6 +20,13 @@ import { D1PlanningRepository } from './infrastructure/repositories/planning-rep
 import { D1ManagementRepository } from './infrastructure/repositories/management-repository';
 import { ProductionReportService } from './application/services/production-report-service';
 import { D1ProductionReportRepository } from './infrastructure/repositories/production-report-repository';
+import { collectPhotos, PhotoService } from './application/services/photo-service';
+import {
+  D1PhotoCollection,
+  D1PhotoRepository,
+} from './infrastructure/repositories/photo-repository';
+import { R2PhotoStorage } from './infrastructure/media/r2-photo-storage';
+import { WorkerPhotoProcessor } from './infrastructure/media/worker-photo-processor';
 
 export function createServices(
   env: Bindings,
@@ -35,6 +42,11 @@ export function createServices(
   return {
     catalog,
     zones,
+    photos: new PhotoService(
+      new D1PhotoRepository(env.DB, actor),
+      new R2PhotoStorage(env.PHOTOS),
+      new WorkerPhotoProcessor(env.IMAGES),
+    ),
     trash: new TrashService(new D1TrashRepository(env.DB, actor.id), catalog, actor),
     integration: new IntegrationService(new DisabledA2Gateway(), catalog),
     orders: new OrderService(
@@ -66,3 +78,7 @@ export function createAuthentication(env: Bindings, headers: Headers) {
 }
 export type Services = ReturnType<typeof createServices>;
 export type Authentication = ReturnType<typeof createAuthentication>;
+
+export function cleanupPhotos(env: Bindings) {
+  return collectPhotos(new D1PhotoCollection(env.DB), new R2PhotoStorage(env.PHOTOS));
+}

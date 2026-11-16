@@ -3,7 +3,10 @@ import { type SessionUser } from '@briochett/contracts';
 import { api } from '../../infrastructure/http/api-client';
 import { errorMessage } from '../../shared/formatters';
 import { useList } from './use-list';
+import { photoPath, usePhotoDraft } from './useRecordPhoto';
 export function useUsers() {
+  const photo = reactive(usePhotoDraft());
+  const pendingId = ref('');
   const { data, page, busy, error, load } = useList<SessionUser>(() => '/users'),
     open = ref(false),
     selected = ref<SessionUser | null>(null),
@@ -20,6 +23,8 @@ export function useUsers() {
       active: true,
     });
   function edit(u: SessionUser | null) {
+    photo.reset(u?.photoId);
+    pendingId.value = '';
     selected.value = u;
     Object.assign(
       form,
@@ -39,23 +44,37 @@ export function useUsers() {
     open.value = true;
   }
   async function save() {
+    if (saving.value) return;
     saving.value = true;
     formError.value = '';
     try {
-      await api(selected.value ? '/users/' + selected.value.id : '/users', {
-        method: selected.value ? 'PATCH' : 'POST',
-        body: selected.value
-          ? { name: form.name, email: form.email, role: form.role, active: form.active }
-          : form,
-      });
-      open.value = false;
-      form.password = '';
-      load();
+      if (!pendingId.value) {
+        const saved = await api<Pick<SessionUser, 'id'>>(
+          selected.value ? '/users/' + selected.value.id : '/users',
+          {
+            method: selected.value ? 'PATCH' : 'POST',
+            body: selected.value
+              ? { name: form.name, email: form.email, role: form.role, active: form.active }
+              : form,
+          },
+        );
+        pendingId.value = saved.id;
+        form.password = '';
+      }
+      if (form.role === 'vendedor') await photo.commit(photoPath('users', pendingId.value));
+      close();
     } catch (e) {
       formError.value = errorMessage(e);
     } finally {
       saving.value = false;
     }
+  }
+  function close() {
+    if (pendingId.value) void load();
+    open.value = false;
+    photo.reset();
+    pendingId.value = '';
+    form.password = '';
   }
   async function resetPassword() {
     saving.value = true;
@@ -90,5 +109,8 @@ export function useUsers() {
     save,
     resetPassword,
     load,
+    photo,
+    pendingId,
+    close,
   };
 }

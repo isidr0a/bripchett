@@ -31,6 +31,7 @@ type ClientRow = {
   active: number;
   geo_json: string | null;
   geo_updated_by: string | null;
+  photo_id: string | null;
   visit_days_json: string;
   recurrence: Client['recurrence'];
   recurrence_start: string;
@@ -40,7 +41,7 @@ type ProductRow = Omit<Product, 'active'> & { active: number };
 const clientSelect =
   'SELECT c.*,u.name sellerName FROM clients c LEFT JOIN user u ON u.id=c.seller_id';
 const productSelect =
-  'SELECT id,sku,name,price_usd priceUsd,active,updated_at updatedAt FROM products';
+  'SELECT id,sku,name,price_usd priceUsd,active,updated_at updatedAt,photo_id photoId FROM products';
 
 function mapClient(row: ClientRow): Client {
   return {
@@ -58,6 +59,7 @@ function mapClient(row: ClientRow): Client {
     active: !!row.active,
     geo: row.geo_json ? (JSON.parse(row.geo_json) as Client['geo']) : null,
     geoUpdatedBy: row.geo_updated_by,
+    photoId: row.photo_id,
     visitDays: JSON.parse(row.visit_days_json) as Client['visitDays'],
     recurrence: row.recurrence,
     recurrenceStart: row.recurrence_start,

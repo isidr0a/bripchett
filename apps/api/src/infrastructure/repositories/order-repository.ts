@@ -113,6 +113,7 @@ export class D1OrderRepository extends D1Repository implements OrderRepository {
     requestHash,
     at,
   }: OrderRegistration) {
+    const { photoId: _photoId, ...clientSnapshot } = client;
     const statements = [
       this.db
         .prepare(
@@ -129,7 +130,7 @@ export class D1OrderRepository extends D1Repository implements OrderRepository {
           minor(q.totalUsd),
           q.units,
           d.notes,
-          JSON.stringify(client),
+          JSON.stringify(clientSnapshot),
           key,
           requestHash,
           at,

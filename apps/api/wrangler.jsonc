@@ -19,5 +19,8 @@
     },
   ],
   "routes": [{ "pattern": "api.briochettvzla.com", "custom_domain": true }],
+  "r2_buckets": [{ "binding": "PHOTOS", "bucket_name": "briochett-sistema-photos" }],
+  "images": { "binding": "IMAGES" },
+  "triggers": { "crons": ["17 * * * *"] },
   "observability": { "enabled": true },
 }

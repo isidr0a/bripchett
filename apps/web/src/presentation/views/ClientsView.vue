@@ -5,6 +5,9 @@ import PageHeader from '../components/PageHeader.vue';
 import AppPagination from '../components/AppPagination.vue';
 import AppModal from '../components/AppModal.vue';
 import ClientForm from '../components/ClientForm.vue';
+import PhotoPreview from '../components/PhotoPreview.vue';
+import RecordPhotoPanel from '../components/RecordPhotoPanel.vue';
+import { photoPath } from '../../application/composables/useRecordPhoto';
 import OrderWizard from '../components/OrderWizard.vue';
 import { useClients } from '../../application/composables/useClients';
 const {
@@ -60,16 +63,27 @@ const {
         <tbody>
           <tr v-for="c in data.items" :key="c.id">
             <td>
-              <button
-                class="text-button strong"
-                @click="
-                  selected = c;
-                  mode = 'detail';
-                  message = '';
-                "
-              >
-                {{ c.name }}</button
-              ><small>{{ c.code }}</small>
+              <div class="photo-cell">
+                <PhotoPreview
+                  :path="photoPath('clients', c.id)"
+                  :photo-id="c.photoId"
+                  alt=""
+                  compact
+                  lazy
+                />
+                <div>
+                  <button
+                    class="text-button strong"
+                    @click="
+                      selected = c;
+                      mode = 'detail';
+                      message = '';
+                    "
+                  >
+                    {{ c.name }}</button
+                  ><small>{{ c.code }}</small>
+                </div>
+              </div>
             </td>
             <td>
               {{ c.rif || 'RIF pendiente' }}<small>{{ c.contact }}</small>
@@ -114,7 +128,12 @@ const {
     "
     :wide="mode !== 'detail'"
     :busy="saving"
-    @close="mode = null"
+    @close="
+      () => {
+        if (mode === 'new') void load();
+        mode = null;
+      }
+    "
     ><ClientForm
       v-if="mode !== 'detail'"
       :key="(selected?.id || 'new') + mode"
@@ -125,6 +144,26 @@ const {
       @cancel="mode = null"
     />
     <div v-else-if="selected" class="stack">
+      <RecordPhotoPanel
+        v-if="
+          auth.isAdmin || (auth.canSell && selected.active && selected.sellerId === auth.user?.id)
+        "
+        :path="photoPath('clients', selected.id)"
+        :photo-id="selected.photoId"
+        label="Foto del negocio"
+        @busy="saving = $event"
+        @saved="
+          (photoId) => {
+            if (selected) saved({ ...selected, photoId });
+          }
+        "
+      />
+      <PhotoPreview
+        v-else
+        :path="photoPath('clients', selected.id)"
+        :photo-id="selected.photoId"
+        :alt="'Foto de ' + selected.name"
+      />
       <div class="detail-grid">
         <div>
           <small>Código</small>

@@ -18,7 +18,8 @@ type UserRow = Omit<SessionUser, 'active' | 'mustChangePassword'> & {
   mustChangePassword: number;
 };
 type Counts = { total: number; pending?: number; scheduled?: number };
-const userSelect = 'SELECT id,name,email,username,role,active,mustChangePassword FROM user';
+const userSelect =
+  "SELECT id,name,email,username,role,active,mustChangePassword,CASE WHEN role='vendedor' THEN photo_id END photoId FROM user";
 const mapUser = (row: UserRow): SessionUser => ({
   ...row,
   active: !!row.active,

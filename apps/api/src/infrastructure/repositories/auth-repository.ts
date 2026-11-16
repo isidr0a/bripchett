@@ -10,7 +10,7 @@ export class D1AuthRepository {
   async sessionUser(id: string): Promise<SessionUser | null> {
     const row = await this.db
       .prepare(
-        'SELECT id,name,email,username,role,active,banned,mustChangePassword FROM user WHERE id=? AND deleted_at IS NULL',
+        "SELECT id,name,email,username,role,active,banned,mustChangePassword,CASE WHEN role='vendedor' THEN photo_id END photoId FROM user WHERE id=? AND deleted_at IS NULL",
       )
       .bind(id)
       .first<SessionRow>();
@@ -23,6 +23,7 @@ export class D1AuthRepository {
       role: row.role,
       active: !!row.active,
       mustChangePassword: !!row.mustChangePassword,
+      photoId: row.photoId,
     };
   }
   async passwordChanged(id: string) {

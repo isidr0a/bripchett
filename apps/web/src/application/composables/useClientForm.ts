@@ -16,6 +16,7 @@ import { api, ApiFailure } from '../../infrastructure/http/api-client';
 import { errorMessage, today } from '../../shared/formatters';
 import { readDraft, writeDraft, removeDraft } from '../../infrastructure/storage/draft-storage';
 import { captureLocation } from '../../infrastructure/geolocation/browser-location';
+import { photoPath, usePhotoDraft } from './useRecordPhoto';
 export function useClientForm(
   props: Readonly<{ client?: Client; completion?: boolean }>,
   emit: {
@@ -25,6 +26,8 @@ export function useClientForm(
   },
 ) {
   const auth = useAuth();
+  const photo = reactive(usePhotoDraft());
+  const pendingClient = ref<Client | null>(null);
   const sellerIntake = computed(() => !props.client && !auth.isAdmin);
   const requireDetails = computed(() => !!props.completion || sellerIntake.value);
   const key =
@@ -126,9 +129,30 @@ export function useClientForm(
     reviewed.value = false;
     error.value = '';
   }
+  function finishWithoutPhoto() {
+    if (pendingClient.value) emit('saved', { ...pendingClient.value, photoId: photo.current });
+  }
+  async function savePendingPhoto() {
+    const client = pendingClient.value!;
+    const photoId = await photo.commit(photoPath('clients', client.id));
+    emit('saved', { ...client, photoId });
+  }
+  async function retryPhoto() {
+    busy.value = true;
+    emit('busy', true);
+    try {
+      await savePendingPhoto();
+    } catch (e) {
+      error.value = errorMessage(e);
+    } finally {
+      busy.value = false;
+      emit('busy', false);
+    }
+  }
   async function save() {
     error.value = '';
     if (busy.value) return;
+    if (pendingClient.value) return retryPhoto();
     const details = {
       name: form.name,
       rif: form.rif,
@@ -179,7 +203,10 @@ export function useClientForm(
         },
       );
       removeDraft(key);
-      emit('saved', result);
+      if (!props.client && !props.completion && photo.changed) {
+        pendingClient.value = result;
+        await savePendingPhoto();
+      } else emit('saved', result);
     } catch (e) {
       if (e instanceof ApiFailure && e.code === 'ZONE_IMPACT_CHANGED') {
         cancelReview();
@@ -211,5 +238,8 @@ export function useClientForm(
     locate,
     confirmGPS,
     save,
+    photo,
+    pendingClient,
+    finishWithoutPhoto,
   };
 }

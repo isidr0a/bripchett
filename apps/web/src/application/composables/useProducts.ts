@@ -4,7 +4,10 @@ import { useAuth } from '../stores/auth';
 import { api } from '../../infrastructure/http/api-client';
 import { errorMessage } from '../../shared/formatters';
 import { useList } from './use-list';
+import { photoPath, usePhotoDraft } from './useRecordPhoto';
 export function useProducts() {
+  const photo = reactive(usePhotoDraft());
+  const pendingId = ref('');
   const auth = useAuth(),
     { data, page, busy, error, load } = useList<Product>(() => '/products'),
     open = ref(false),
@@ -13,6 +16,8 @@ export function useProducts() {
     formError = ref(''),
     form = reactive({ name: '', sku: '', priceUsd: '', active: true });
   function edit(p: Product | null) {
+    photo.reset(p?.photoId);
+    pendingId.value = '';
     selected.value = p;
     Object.assign(
       form,
@@ -24,20 +29,33 @@ export function useProducts() {
     open.value = true;
   }
   async function save() {
+    if (saving.value) return;
     saving.value = true;
     formError.value = '';
     try {
-      await api(selected.value ? '/products/' + selected.value.id : '/products', {
-        method: selected.value ? 'PATCH' : 'POST',
-        body: { ...form, priceUsd: String(form.priceUsd) },
-      });
-      open.value = false;
-      load();
+      if (!pendingId.value) {
+        const saved = await api<Product>(
+          selected.value ? '/products/' + selected.value.id : '/products',
+          {
+            method: selected.value ? 'PATCH' : 'POST',
+            body: { ...form, priceUsd: String(form.priceUsd) },
+          },
+        );
+        pendingId.value = saved.id;
+      }
+      await photo.commit(photoPath('products', pendingId.value));
+      close();
     } catch (e) {
       formError.value = errorMessage(e);
     } finally {
       saving.value = false;
     }
+  }
+  function close() {
+    if (pendingId.value) void load();
+    open.value = false;
+    photo.reset();
+    pendingId.value = '';
   }
   return {
     auth,
@@ -52,6 +70,9 @@ export function useProducts() {
     form,
     edit,
     save,
+    photo,
+    pendingId,
+    close,
     load,
   };
 }

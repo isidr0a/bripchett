@@ -2,6 +2,7 @@ import { beforeAll, afterAll, describe, it, expect } from 'vitest';
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 import { readFile } from 'node:fs/promises';
 import app from '../apps/api/src/index';
+import { cleanupPhotos } from '../apps/api/src/composition';
 import { createAuth } from '../apps/api/src/infrastructure/auth/better-auth';
 import { calculateLine } from '../apps/api/src/domain/pricing';
 import { visitFits } from '../apps/api/src/domain/scheduling';
@@ -20,6 +21,7 @@ async function request(
   data?: unknown,
   extra: Record<string, string> = {},
 ) {
+  const multipart = data instanceof FormData;
   const r = await app.request(
     'http://localhost:8787' + path,
     {
@@ -27,23 +29,30 @@ async function request(
       headers: {
         Origin: env.FRONTEND_ORIGIN,
         ...(cookies[role] ? { Cookie: cookies[role] } : {}),
-        ...(data ? { 'Content-Type': 'application/json' } : {}),
+        ...(data && !multipart ? { 'Content-Type': 'application/json' } : {}),
         ...extra,
       },
-      ...(data ? { body: JSON.stringify(data) } : {}),
+      ...(data ? { body: multipart ? data : JSON.stringify(data) } : {}),
     },
     env,
   );
-  const body = await r.json().catch(() => null);
+  const body =
+    r.headers.get('Content-Type') === 'image/webp'
+      ? Buffer.from(await r.arrayBuffer())
+      : await r.json().catch(() => null);
   return { status: r.status, body, response: r };
 }
-async function createUser(role: string, name: string) {
+async function createUser(
+  role: string,
+  name: string,
+  accountRole = role === 'second' ? 'vendedor' : role,
+) {
   const result = await createAuth(env).api.createUser({
     body: {
       name,
       email: role + '@briochett.invalid',
       password: 'Initial-dev-2026!',
-      role: role === 'second' ? 'vendedor' : role,
+      role: accountRole,
       data: { username: role, active: true, mustChangePassword: false },
     },
   });
@@ -171,11 +180,13 @@ beforeAll(async () => {
       script: 'export default {fetch(){return new Response("ok")}}',
       compatibilityDate: '2026-10-30',
       d1Databases: ['DB'],
+      r2Buckets: ['PHOTOS'],
     }),
   );
   db = (await mf.getD1Database('DB')) as unknown as D1Database;
   env = {
     DB: db,
+    PHOTOS: (await mf.getR2Bucket('PHOTOS')) as unknown as R2Bucket,
     API_ORIGIN: 'http://localhost:8787',
     FRONTEND_ORIGIN: 'http://localhost:5173',
     BETTER_AUTH_SECRET: 'test-only-secret-not-for-production-2026-000000',
@@ -190,6 +201,7 @@ beforeAll(async () => {
     '0005_soft_delete.sql',
     '0006_commercial_zones.sql',
     '0007_production_report.sql',
+    '0008_record_photos.sql',
   ]) {
     if (file === '0006_commercial_zones.sql') await oldZoneFixtures();
     if (file === '0007_production_report.sql') await legacyProductionFixtures();
@@ -1887,5 +1899,245 @@ describe('Totales de producción', () => {
     expect((await options('client', { ...params, q: '_' })).body.total).toBe(0);
     expect((await options('client', { ...params, page: '0' })).status).toBe(422);
     expect((await options('invalid', params)).status).toBe(422);
+  });
+});
+
+describe('Fotos privadas', () => {
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  const webp = Buffer.from('UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEALmk0mk0iIiIiIgBo', 'base64');
+  const productPath = () => '/api/v1/products/' + product.id + '/photo';
+  const clientPath = (id: string) => '/api/v1/clients/' + id + '/photo';
+  const profile = '/api/v1/me/photo';
+
+  function imageBinding(output = webp, wait?: () => Promise<void>) {
+    return {
+      async info() {
+        return { format: 'image/png', width: 1, height: 1, fileSize: png.length };
+      },
+      input() {
+        return {
+          transform(options: unknown) {
+            expect(options).toMatchObject({ width: 1024, height: 1024, fit: 'scale-down' });
+            return {
+              async output(options: unknown) {
+                expect(options).toMatchObject({ format: 'image/webp', anim: false });
+                await wait?.();
+                return {
+                  response: () =>
+                    new Response(new Uint8Array(output), {
+                      headers: { 'Content-Type': 'image/webp' },
+                    }),
+                };
+              },
+            };
+          },
+        };
+      },
+    } as unknown as ImagesBinding;
+  }
+
+  function upload(
+    path: string,
+    role = 'administracion',
+    expected?: string,
+    source: Uint8Array = png,
+  ) {
+    const form = new FormData();
+    form.append('file', new Blob([new Uint8Array(source)], { type: 'image/png' }), 'prueba.png');
+    if (expected) form.append('expectedPhotoId', expected);
+    return request(path, role, 'POST', form);
+  }
+
+  beforeAll(async () => {
+    await createUser('photo-other', 'Vendedor de prueba de fotos', 'vendedor');
+    env.IMAGES = imageBinding();
+  });
+
+  it('agrega y reemplaza la foto de producto con exclusión de conflictos y auditoría', async () => {
+    const path = productPath();
+    const first = await upload(path);
+    expect(first.status, JSON.stringify(first.body)).toBe(200);
+    const { photoId } = first.body;
+    const visible = await request(path + '?v=' + photoId, 'vendedor');
+    expect(visible.status).toBe(200);
+    expect(visible.body).toEqual(webp);
+    expect(visible.response.headers.get('Cache-Control')).toContain('no-store');
+    expect(await request(path, 'invitado')).toMatchObject({ status: 401 });
+    expect(await request(path, 'supervision')).toMatchObject({ status: 403 });
+    expect(await upload(path, 'vendedor', photoId)).toMatchObject({ status: 403 });
+    const second = await Promise.all([
+      upload(path, 'administracion', photoId),
+      upload(path, 'administracion', photoId),
+    ]);
+    expect(second.map((r) => r.status).sort()).toEqual([200, 409]);
+    const latest = second.find((r) => r.status === 200)!.body.photoId;
+    expect(second.find((r) => r.status === 409)?.body.error.details.photoId).toBe(latest);
+    expect(await request(path + '?v=' + photoId)).toMatchObject({ status: 404 });
+    expect(
+      (await request('/api/v1/products')).body.items.find(
+        (p: { id: string }) => p.id === product.id,
+      ).photoId,
+    ).toBe(latest);
+    const audit = await db
+      .prepare("SELECT count(*) total FROM audit_log WHERE entity_id=? AND action='guardar_foto'")
+      .bind(product.id)
+      .first<{ total: number }>();
+    expect(audit?.total).toBe(2);
+  });
+
+  it('protege la foto de cliente si cambia de vendedor mientras se guarda', async () => {
+    const customer = await request(
+      '/api/v1/clients',
+      'administracion',
+      'POST',
+      baseClient('Negocio con foto', users.vendedor.id),
+    );
+    const path = clientPath(customer.body.id);
+    const first = await upload(path, 'vendedor');
+    expect(first.status, JSON.stringify(first.body)).toBe(200);
+    expect((await request(path, 'supervision')).status).toBe(200);
+    expect((await request(path, 'photo-other')).status).toBe(404);
+    expect((await upload(path, 'photo-other', first.body.photoId)).status).toBe(404);
+    expect((await upload(path, 'supervision', first.body.photoId)).status).toBe(403);
+    let waitForTransform!: () => void;
+    const transforming = new Promise<void>((resolve) => {
+      waitForTransform = resolve;
+    });
+    let resume!: () => void;
+    const paused = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    env.IMAGES = imageBinding(webp, () => {
+      waitForTransform();
+      return paused;
+    });
+    try {
+      const attempted = upload(path, 'vendedor', first.body.photoId);
+      await transforming;
+      expect(
+        (
+          await request(
+            '/api/v1/clients/' + customer.body.id,
+            'administracion',
+            'PATCH',
+            baseClient('Negocio con foto', users['photo-other'].id),
+          )
+        ).status,
+      ).toBe(200);
+      resume();
+      expect((await attempted).status).toBe(404);
+      expect((await request(path, 'vendedor')).status).toBe(404);
+      expect((await request(path + '?v=' + first.body.photoId, 'photo-other')).status).toBe(200);
+    } finally {
+      resume();
+      env.IMAGES = imageBinding();
+    }
+  });
+
+  it('permite al vendedor gestionar su propio perfil y restringe los demás perfiles', async () => {
+    const first = await upload(profile, 'vendedor');
+    expect(first.status).toBe(200);
+    expect((await request('/api/v1/me', 'vendedor')).body.photoId).toBe(first.body.photoId);
+    const userPath = '/api/v1/users/' + users.vendedor.id + '/photo';
+    expect((await request(userPath)).status).toBe(200);
+    expect((await request(userPath, 'photo-other')).status).toBe(403);
+    expect((await request(userPath, 'supervision')).status).toBe(403);
+    expect((await upload(profile, 'preparacion')).status).toBe(403);
+    expect((await request('/api/v1/users/' + users.supervision.id + '/photo')).status).toBe(404);
+    const remove = await request(
+      profile + '?expectedPhotoId=' + first.body.photoId,
+      'vendedor',
+      'DELETE',
+    );
+    expect(remove.body).toEqual({ photoId: null });
+    expect((await request(profile, 'vendedor')).status).toBe(404);
+  });
+
+  it('mantiene la foto al restaurar la ficha y limpia versiones retiradas y cargas abandonadas', async () => {
+    const created = await request('/api/v1/products', 'administracion', 'POST', {
+      name: 'Producto con foto',
+      sku: 'FOTO-RESTAURAR',
+      priceUsd: '1.23',
+    });
+    const parent = '/api/v1/products/' + created.body.id;
+    const path = parent + '/photo';
+    const uploaded = await upload(path);
+    expect(uploaded.status).toBe(200);
+    const retired = uploaded.body.photoId;
+    const replacement = await upload(path, 'administracion', retired);
+    expect(replacement.status).toBe(200);
+    const kept = replacement.body.photoId;
+    expect((await request(parent, 'administracion', 'DELETE')).status).toBe(200);
+    expect((await request(path)).status).toBe(404);
+    await db.prepare("UPDATE photo_files SET collect_after='2000-01-01T00:00:00Z'").run();
+    await cleanupPhotos(env);
+    expect(await env.PHOTOS!.get('photos/' + retired + '.webp')).toBeNull();
+    expect(await env.PHOTOS!.get('photos/' + kept + '.webp')).not.toBeNull();
+    expect(
+      (
+        await request(
+          '/api/v1/trash/products/' + created.body.id + '/restore',
+          'administracion',
+          'POST',
+        )
+      ).status,
+    ).toBe(200);
+    expect((await request(path + '?v=' + kept)).status).toBe(200);
+  });
+
+  it('restringe el tamaño y rechaza contenido inválido o metadatos en la salida', async () => {
+    const path = '/api/v1/users/' + users['photo-other'].id + '/photo';
+    expect(
+      (
+        await upload(
+          path,
+          'administracion',
+          undefined,
+          Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'),
+        )
+      ).status,
+    ).toBe(422);
+    expect(
+      (await upload(path, 'administracion', undefined, new Uint8Array(10 * 1024 * 1024 + 1)))
+        .status,
+    ).toBe(413);
+    expect((await request(path, 'administracion', 'POST', { file: 'datos' })).status).toBe(415);
+    expect(
+      (await request('/api/v1/products', 'administracion', 'POST', { name: 'x'.repeat(270_000) }))
+        .status,
+    ).toBe(413);
+    const exif = Buffer.concat([webp, Buffer.from('455849460400000047505300', 'hex')]);
+    exif.writeUInt32LE(exif.length - 8, 4);
+    env.IMAGES = imageBinding(exif);
+    try {
+      expect((await upload(path)).body.error.code).toBe('PHOTO_PROCESSOR');
+      expect((await request(path)).status).toBe(404);
+    } finally {
+      env.IMAGES = imageBinding();
+    }
+  });
+
+  it('conserva la foto vigente si falla R2 y oculta las fotos al expirar la sesión', async () => {
+    const path = '/api/v1/users/' + users['photo-other'].id + '/photo';
+    const first = await upload(path);
+    expect(first.status).toBe(200);
+    const stored = env.PHOTOS;
+    try {
+      env.PHOTOS = undefined;
+      expect((await upload(path, 'administracion', first.body.photoId)).body.error.code).toBe(
+        'PHOTO_STORAGE',
+      );
+    } finally {
+      env.PHOTOS = stored;
+    }
+    expect((await request(path + '?v=' + first.body.photoId)).status).toBe(200);
+    await db
+      .prepare('UPDATE session SET expiresAt=0 WHERE userId=?')
+      .bind(users['photo-other'].id)
+      .run();
+    expect((await request(profile, 'photo-other')).status).toBe(401);
   });
 });

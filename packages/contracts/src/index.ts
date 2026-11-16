@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { allVisitDays, visitDaysSchema, zoneIdSchema } from './zones';
 export * from './zones';
 export * from './production-report';
+export * from './record-photo';
 import { routeFrequencies, recurringRouteDates, type RouteRecurrence } from './route-recurrence';
 export { routeFrequencies, recurringRouteDates, addCalendarDays } from './route-recurrence';
 export type { RouteFrequency, RouteRecurrence } from './route-recurrence';
@@ -91,6 +92,7 @@ export type Client = Omit<ClientInput, 'zoneId' | 'zoneImpactRevision'> & {
   sellerName: string | null;
   updatedAt: string;
   geoUpdatedBy?: string | null;
+  photoId?: string | null;
 };
 export function clientMissing(
   c: Pick<ClientInput, 'name' | 'rif' | 'contact' | 'phone' | 'address' | 'geo'>,
@@ -119,7 +121,11 @@ export const productSchema = z.object({
     .refine((v) => Number(v) > 0),
   active: z.boolean().default(true),
 });
-export type Product = z.infer<typeof productSchema> & { id: string; updatedAt: string };
+export type Product = z.infer<typeof productSchema> & {
+  id: string;
+  updatedAt: string;
+  photoId?: string | null;
+};
 export const rateSchema = z.object({ currency: z.enum(['COP', 'VES']), rate: decimalString });
 export type Rate = {
   id: string;
@@ -151,6 +157,7 @@ export type SessionUser = {
   role: Role;
   active: boolean;
   mustChangePassword: boolean;
+  photoId?: string | null;
 };
 export const quoteSchema = z
   .object({

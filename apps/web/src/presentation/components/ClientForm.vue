@@ -3,7 +3,9 @@ import { type Client } from '@briochett/contracts';
 import ZonePicker from './ZonePicker.vue';
 import { dateTime } from '../../shared/formatters';
 import VisitAvailability from './VisitAvailability.vue';
+import PhotoField from './PhotoField.vue';
 import { useClientForm } from '../../application/composables/useClientForm';
+import { photoPath } from '../../application/composables/useRecordPhoto';
 const props = defineProps<{ client?: Client; completion?: boolean }>();
 const emit = defineEmits<{ saved: [client: Client]; cancel: []; busy: [value: boolean] }>();
 const {
@@ -25,11 +27,31 @@ const {
   locate,
   confirmGPS,
   save,
+  photo,
+  pendingClient,
+  finishWithoutPhoto,
 } = useClientForm(props, emit);
 </script>
 <template>
   <form class="stack" @submit.prevent="save">
-    <section v-if="review" class="stack" aria-labelledby="zone-review-title">
+    <template v-if="pendingClient">
+      <p class="notice" role="status">El cliente ya está registrado.</p>
+      <PhotoField
+        v-model="photo.draft"
+        :path="photoPath('clients', pendingClient.id)"
+        :photo-id="photo.current"
+        label="Foto del negocio"
+        :disabled="busy"
+      />
+      <p v-if="error" class="notice error" role="alert">{{ error }}</p>
+      <div class="actions">
+        <button :disabled="busy">{{ busy ? 'Guardando foto…' : 'Reintentar foto' }}</button>
+        <button type="button" class="secondary" :disabled="busy" @click="finishWithoutPhoto">
+          Terminar sin aplicar la foto
+        </button>
+      </div>
+    </template>
+    <section v-else-if="review" class="stack" aria-labelledby="zone-review-title">
       <h3 id="zone-review-title">
         {{ reviewed ? 'Confirmación final del cambio de zona' : 'Revisar cambio de zona' }}
       </h3>
@@ -173,6 +195,12 @@ const {
           ><input v-model="form.active" type="checkbox" /> Cliente activo</label
         ></template
       >
+      <PhotoField
+        v-if="!client && !completion"
+        v-model="photo.draft"
+        label="Foto del negocio"
+        :disabled="busy"
+      />
       <div class="actions">
         <button :disabled="busy || gpsBusy">
           {{

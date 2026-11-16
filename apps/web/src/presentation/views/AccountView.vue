@@ -1,11 +1,28 @@
 <script setup lang="ts">
 import PageHeader from '../components/PageHeader.vue';
+import RecordPhotoPanel from '../components/RecordPhotoPanel.vue';
 import { useAccount } from '../../application/composables/useAccount';
 const { auth, currentPassword, newPassword, confirmation, busy, error, success, change } =
   useAccount();
 </script>
 <template>
   <PageHeader title="Mi cuenta" description="Seguridad y datos de acceso" />
+  <section
+    v-if="auth.user?.role === 'vendedor' && !auth.user.mustChangePassword"
+    class="card narrow"
+  >
+    <RecordPhotoPanel
+      path="/me/photo"
+      :photo-id="auth.user.photoId"
+      label="Foto de perfil"
+      portrait
+      @saved="
+        (photoId) => {
+          if (auth.user) auth.user.photoId = photoId;
+        }
+      "
+    />
+  </section>
   <section class="card narrow">
     <h2>{{ auth.user?.name }}</h2>
     <p class="muted">{{ auth.user?.username }}</p>

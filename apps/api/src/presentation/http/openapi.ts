@@ -18,6 +18,8 @@ import {
   routeSchema,
   visitSchema,
   visitResultSchema,
+  photoChangeSchema,
+  photoKinds,
 } from '@briochett/contracts';
 type Parameter = {
   name: string;
@@ -79,6 +81,65 @@ for (const [path, label, schema] of [
   operation('/api/v1/' + path, 'post', 'Crear ' + label, schema);
 }
 operation('/api/v1/clients/{id}', 'get', 'Consultar cliente');
+for (const resource of [...photoKinds, 'me'] as const) {
+  const path = '/api/v1/' + resource + (resource === 'me' ? '' : '/{id}') + '/photo';
+  operation(path, 'get', 'Leer la foto vigente con los permisos de la ficha');
+  operation(path, 'post', 'Agregar o reemplazar la foto de la ficha');
+  operation(path, 'delete', 'Quitar la foto de la ficha');
+  paths[path].get.parameters = [
+    ...(paths[path].get.parameters ?? []),
+    {
+      name: 'v',
+      in: 'query',
+      schema: { type: 'string', format: 'uuid' },
+      description: 'Versión solicitada de la foto vigente.',
+    },
+  ];
+  paths[path].get.responses[200].content = {
+    'image/webp': { schema: { type: 'string', format: 'binary' } },
+  };
+  paths[path].post.requestBody = {
+    required: true,
+    content: {
+      'multipart/form-data': {
+        schema: {
+          type: 'object',
+          required: ['file'],
+          properties: {
+            file: {
+              type: 'string',
+              format: 'binary',
+              description: 'JPG, PNG, WebP o HEIC de hasta 10 MB.',
+            },
+            expectedPhotoId: {
+              type: 'string',
+              format: 'uuid',
+              description:
+                'Identificador vigente al reemplazar. Omite el campo para la primera foto.',
+            },
+          },
+        },
+      },
+    },
+  };
+  paths[path].post.responses[413] = { description: 'La foto supera el tamaño admitido.' };
+  paths[path].post.responses[415] = { description: 'Se requiere multipart/form-data.' };
+  paths[path].delete.parameters = [
+    ...(paths[path].delete.parameters ?? []),
+    {
+      name: 'expectedPhotoId',
+      in: 'query',
+      schema: { type: 'string', format: 'uuid' },
+      description: 'Versión visible de la foto que se quiere quitar.',
+    },
+  ];
+  for (const method of ['post', 'delete']) {
+    paths[path][method].responses[200].content = {
+      'application/json': { schema: z.toJSONSchema(photoChangeSchema) },
+    };
+    paths[path][method].responses[409].description = 'La foto vigente cambió durante la edición.';
+  }
+}
 operation(
   '/api/v1/clients/{id}',
   'patch',

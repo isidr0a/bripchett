@@ -16,18 +16,18 @@ import { planningController } from './controllers/planning-controller';
 import { managementController } from './controllers/management-controller';
 import { openapi } from './openapi';
 import { integrationController } from './controllers/integration-controller';
+import { photoController, photoUploadPath } from './controllers/photo-controller';
 const app = new Hono<AppEnv>();
-app.use(
-  '*',
-  secureHeaders(),
-  bodyLimit({
-    maxSize: 256 * 1024,
-    onError: (c) =>
-      c.json(
-        { error: { code: 'BODY_TOO_LARGE', message: 'La solicitud es demasiado grande.' } },
-        413,
-      ),
-  }),
+const standardBodyLimit = bodyLimit({
+  maxSize: 256 * 1024,
+  onError: (c) =>
+    c.json(
+      { error: { code: 'BODY_TOO_LARGE', message: 'La solicitud es demasiado grande.' } },
+      413,
+    ),
+});
+app.use('*', secureHeaders(), (c, next) =>
+  c.req.method === 'POST' && photoUploadPath.test(c.req.path) ? next() : standardBodyLimit(c, next),
 );
 app.use('*', async (c, next) => {
   c.set('requestId', uid());
@@ -98,6 +98,7 @@ app.use('/api/v1/*', async (c, next) => {
 app.get('/api/v1/me', (c) => c.json(c.get('user')));
 app.route('/api/v1', catalogController);
 app.route('/api/v1', orderController);
+app.route('/api/v1', photoController);
 app.route('/api/v1', planningController);
 app.route('/api/v1', managementController);
 app.route('/api/v1', integrationController);

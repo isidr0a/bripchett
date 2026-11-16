@@ -352,6 +352,12 @@ hr {
   overflow-x: auto;
   max-width: 100%;
 }
+.photo-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
 table {
   border-collapse: separate;
   border-spacing: 0;
