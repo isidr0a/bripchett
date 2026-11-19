@@ -67,7 +67,18 @@ Autenticación: `/api/auth`. Recursos: `/api/v1`. Especificación OpenAPI: `/api
 
 La aplicación usa cookies HttpOnly, Secure en producción y sesiones persistentes de ocho horas. El frontend envía credenciales a la API; CORS y la comprobación del origen admiten únicamente el frontend configurado. Los intentos de login están limitados. Las consultas usan parámetros. Las migraciones de `apps/api/migrations` incluyen FTS5, auditoría y restricciones de concurrencia; los pedidos y sus partidas se guardan en un lote atómico.
 
-`packages/contracts` comparte tipos y validaciones Zod entre ambas aplicaciones. El puerto `A2Gateway` en `apps/api/src/application/ports.ts` define la interfaz futura para importar/crear clientes, enviar pedidos y consultar estados de cuenta. Su adaptador deshabilitado está en `apps/api/src/infrastructure/integrations/a2-gateway.ts`. La conexión está deshabilitada hasta confirmar la versión y el mecanismo de conexión del equipo local. Las consultas de cuenta devuelven un error explícito de integración pendiente; no hay saldos simulados en producción.
+`packages/contracts` comparte tipos y validaciones Zod entre ambas aplicaciones. El puerto `A2Gateway` en `apps/api/src/application/ports.ts` define la interfaz futura para importar/crear clientes, enviar pedidos y consultar estados de cuenta. Su adaptador deshabilitado está en `apps/api/src/infrastructure/integrations/a2-gateway.ts`. La conexión está deshabilitada mientras se verifica el mecanismo disponible en el equipo local. Las consultas de cuenta devuelven un error explícito de integración pendiente; no hay saldos simulados en producción.
+
+### Integración con a2
+
+La instalación reportada usa a2 Herramienta Administrativa Configurable **12.36.41D**. La revisión de documentación identifica dos vías para obtener clientes y estados de cuenta. La compatibilidad queda pendiente de una prueba en el equipo Windows.
+
+- **DBISAM por ODBC.** Revisar en **a2 Sistema → Archivo → Datos de la Empresa → Directorios** si el modo cliente-servidor está activo. Si usa `a2Server`, probar una cuenta de consulta autorizada en la red local. Si usa archivos, probar el driver compatible sobre una copia de los datos con `ReadOnly=True`. Comparar el saldo y los documentos pendientes de un cliente con su estado de cuenta en a2. [Documentación del driver DBISAM](https://www.elevatesoft.com/manual?action=viewtopic&id=dbisam4odbc&topic=connection_strings).
+- **Exportación de reportes.** Si ODBC no está disponible, usar los reportes de clientes y estados de cuenta que permita exportar la instalación. Confirmar los formatos y campos antes de automatizar la carga.
+
+Para crear clientes y registrar pedidos, queda pendiente que el proveedor confirme una interfaz compatible con esta compilación para aplicaciones externas. [Android Commander](https://a2.com.ve/producto/a2-android-commander/) registra pedidos de Android Vendor. Para habilitar envíos desde Briochett, validar con el proveedor el alta de clientes, el registro de pedidos con referencia externa y la consulta del número asignado por a2.
+
+El diseño propuesto usa conexiones HTTPS iniciadas por el cliente Windows hacia la API de Briochett. El cliente envía actualizaciones y consulta trabajos pendientes en D1. Cada pedido conserva su referencia externa durante los reintentos y queda pendiente mientras el equipo local está desconectado.
 
 ## Verificación
 
