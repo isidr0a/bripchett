@@ -1,28 +1,29 @@
 {
-  "verifiedAt": "2026-11-21T16:36:13.762Z",
+  "verifiedAt": "2026-11-21T17:03:49.829Z",
   "timezone": "America/Caracas",
-  "sourceCommit": "6cac377ce402969fd6018cbd6a1ba1876f3ce0c7",
+  "sourceCommit": "49e0b002c55e687262005a492c8b0894f8369d89",
   "frontend": {
     "platform": "Cloudflare Pages",
     "project": "briochett-app",
     "branch": "main",
     "url": "https://app.briochettvzla.com",
-    "deploymentId": "96af49fc",
-    "deploymentUrl": "https://96af49fc.briochett-app.pages.dev",
+    "deploymentId": "2afb137e-0048-4f9f-987d-48922adb9940",
+    "deploymentUrl": "https://2afb137e.briochett-app.pages.dev",
     "httpsVerified": true,
     "directSpaRouteStatus": 200,
     "productionBundleMatches": true,
-    "entryAsset": "/assets/index-B4NF66LF.js"
+    "entryAsset": "/assets/index-D7g6RLIU.js"
   },
   "backend": {
     "platform": "Cloudflare Workers",
     "worker": "briochett-api",
     "url": "https://api.briochettvzla.com",
-    "versionId": "5d053f1b-06db-4abf-ab5c-66685d24352d",
+    "versionId": "d649c81c-aab5-4638-bfe9-36ea2ba6ba9e",
     "healthStatus": 200,
     "openapiUrl": "https://api.briochettvzla.com/api/v1/openapi.json",
     "anonymousCatalogImportStatus": 401,
-    "photoCleanupCron": "17 * * * *"
+    "photoCleanupCron": "17 * * * *",
+    "productSchemaUsesCOP": true
   },
   "database": {
     "platform": "Cloudflare D1",
@@ -38,9 +39,12 @@
       "0007_production_report.sql",
       "0008_record_photos.sql",
       "0009_catalog_import.sql",
-      "0010_import_zone_classification.sql"
+      "0010_import_zone_classification.sql",
+      "0011_prices_cop.sql"
     ],
-    "recoveryBookmarkBeforeMigration": "000000be-00000000-0000512a-a49a0f69f4cf7020dd6921c1a923c17d"
+    "recoveryBookmarkBeforeMigration": "000000c3-00000000-0000512a-a9fe7259754e2ac8b3ae0e286f9771ee",
+    "productsAtMigration": 0,
+    "copRateAvailable": false
   },
   "storage": {
     "platform": "Cloudflare R2",
@@ -50,12 +54,13 @@
     "customDomains": []
   },
   "verification": {
-    "automatedTestsPassed": 84,
+    "automatedTestsPassed": 87,
     "typeChecksPassed": true,
     "lintersPassed": true,
     "formatCheckPassed": true,
     "productionBuildPassed": true,
-    "authenticatedImportVerified": false
+    "authenticatedImportVerified": false,
+    "authenticatedOrderVerified": false
   },
   "a2": {
     "enabled": false,
