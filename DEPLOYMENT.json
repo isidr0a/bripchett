@@ -1,18 +1,18 @@
 {
-  "verifiedAt": "2026-11-21T17:03:49.829Z",
+  "verifiedAt": "2026-11-21T17:17:46.085Z",
   "timezone": "America/Caracas",
-  "sourceCommit": "49e0b002c55e687262005a492c8b0894f8369d89",
+  "sourceCommit": "8b3b783a98501af42c4233b99b87e30b2944b943",
   "frontend": {
     "platform": "Cloudflare Pages",
     "project": "briochett-app",
     "branch": "main",
     "url": "https://app.briochettvzla.com",
-    "deploymentId": "2afb137e-0048-4f9f-987d-48922adb9940",
-    "deploymentUrl": "https://2afb137e.briochett-app.pages.dev",
+    "deploymentId": "e37eca27-702d-4e70-b22a-0c52d9f45396",
+    "deploymentUrl": "https://e37eca27.briochett-app.pages.dev",
     "httpsVerified": true,
     "directSpaRouteStatus": 200,
     "productionBundleMatches": true,
-    "entryAsset": "/assets/index-D7g6RLIU.js"
+    "entryAsset": "/assets/index-8_-K84z8.js"
   },
   "backend": {
     "platform": "Cloudflare Workers",
@@ -54,13 +54,15 @@
     "customDomains": []
   },
   "verification": {
-    "automatedTestsPassed": 87,
+    "automatedTestsPassed": 2,
     "typeChecksPassed": true,
     "lintersPassed": true,
     "formatCheckPassed": true,
     "productionBuildPassed": true,
     "authenticatedImportVerified": false,
-    "authenticatedOrderVerified": false
+    "authenticatedOrderVerified": false,
+    "priorFullSuiteTestsPassed": 87,
+    "authenticatedSettingsVerified": false
   },
   "a2": {
     "enabled": false,
