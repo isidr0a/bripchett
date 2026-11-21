@@ -5,50 +5,69 @@ import CatalogImportPanel from '../components/CatalogImportPanel.vue';
 import PageHeader from '../components/PageHeader.vue';
 import { dateTime } from '../../shared/formatters';
 import { useSettings } from '../../application/composables/useSettings';
-const { rates, currency, rate, busy, error, success, integration, save, load } = useSettings();
+const { rates, currency, rate, busy, error, success, integration, current, save, load } =
+  useSettings();
 </script>
 <template>
   <PageHeader title="Configuración" description="Tasas de cambio, importación e integración" />
   <p v-if="error" class="notice error" role="alert">{{ error }}</p>
   <p v-if="success" class="notice success" role="status">{{ success }}</p>
   <section class="card stack">
-    <h2>Tasas de cambio</h2>
+    <h2>Configuración de monedas</h2>
     <p class="muted">
-      Precios base en COP. Registra cuántos pesos colombianos o bolívares equivalen a un dólar.
+      Los precios y pedidos usan pesos colombianos como moneda base. Las tasas de dólares y
+      bolívares se registran por cada dólar y se usan para calcular su equivalencia en pesos.
     </p>
     <div class="metrics rates">
       <article class="inset card">
-        <small>1 USD en COP</small
-        ><strong>{{ rates.find((r) => r.currency === 'COP')?.rate || 'Sin configurar' }}</strong>
+        <small>Moneda base</small><strong>Peso colombiano · COP</strong>
       </article>
       <article class="inset card">
-        <small>1 USD en VES</small
-        ><strong>{{ rates.find((r) => r.currency === 'VES')?.rate || 'Sin configurar' }}</strong>
+        <small>Dólar estadounidense · USD</small>
+        <strong>{{ current.usd ? `1 USD = ${current.usd.rate} COP` : 'Sin configurar' }}</strong>
+      </article>
+      <article class="inset card">
+        <small>Bolívar · VES</small>
+        <strong>
+          {{
+            current.copPerVes === null
+              ? 'Sin configurar'
+              : `1 VES ≈ ${new Intl.NumberFormat('es-CO', { maximumSignificantDigits: 8 }).format(current.copPerVes)} COP`
+          }}
+        </strong>
+        <small v-if="current.ves">1 USD = {{ current.ves.rate }} VES</small>
       </article>
     </div>
     <form class="toolbar" @submit.prevent="save">
       <label
-        >Moneda<select v-model="currency">
-          <option value="COP">Pesos colombianos · COP</option>
-          <option value="VES">Bolívares · VES</option>
+        >Moneda a modificar<select v-model="currency" @change="rate = ''">
+          <option value="USD">Dólar estadounidense · USD</option>
+          <option value="VES">Bolívar · VES</option>
         </select></label
-      ><label
-        >Unidades por 1 USD<input
+      >
+      <label
+        >{{ currency === 'USD' ? 'Pesos colombianos por 1 USD' : 'Bolívares por 1 USD'
+        }}<input
           v-model="rate"
           type="text"
           inputmode="decimal"
           pattern="[0-9]+(\.[0-9]{1,6})?"
-          placeholder="Ej. 4200.00"
-          required /></label
-      ><button :disabled="busy">{{ busy ? 'Guardando…' : 'Registrar tasa' }}</button>
+          :placeholder="currency === 'USD' ? 'Ej. 4200.00' : 'Ej. 120.00'"
+          required
+      /></label>
+      <button :disabled="busy">{{ busy ? 'Guardando…' : 'Guardar tasa' }}</button>
     </form>
+    <p class="muted small">
+      Para convertir bolívares se necesitan las tasas de dólar y bolívar. Los pedidos anteriores
+      conservan su tasa.
+    </p>
     <div class="table-wrap">
       <table v-responsive-table>
         <thead>
           <tr>
             <th>Fecha</th>
-            <th>Moneda</th>
-            <th>Unidades / USD</th>
+            <th>Moneda configurada</th>
+            <th>Equivalencia registrada</th>
             <th>Registrada por</th>
             <th>Acción</th>
           </tr>
@@ -56,14 +75,14 @@ const { rates, currency, rate, busy, error, success, integration, save, load } =
         <tbody>
           <tr v-for="r in rates" :key="r.id">
             <td>{{ dateTime(r.createdAt) }}</td>
-            <td>{{ r.currency }}</td>
-            <td>{{ r.rate }}</td>
+            <td>{{ r.currency === 'COP' ? 'Dólar · USD' : 'Bolívar · VES' }}</td>
+            <td>1 USD = {{ r.rate }} {{ r.currency }}</td>
             <td>{{ r.createdBy }}</td>
             <td>
               <DeleteRecord
                 :id="r.id"
                 type="rates"
-                :label="r.currency + ' · ' + r.rate"
+                :label="'1 USD = ' + r.rate + ' ' + r.currency"
                 @deleted="load"
               />
             </td>

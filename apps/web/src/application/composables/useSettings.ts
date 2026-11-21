@@ -1,15 +1,17 @@
-import { ref, onMounted } from 'vue';
+import { computed, ref, onMounted } from 'vue';
 import type { Rate } from '@briochett/contracts';
 import { api } from '../../infrastructure/http/api-client';
 import { errorMessage } from '../../shared/formatters';
+import { currencySettings, ratePayload, type EditableCurrency } from './currencySettings';
 export function useSettings() {
   const rates = ref<Rate[]>([]),
-    currency = ref('COP'),
+    currency = ref<EditableCurrency>('USD'),
     rate = ref(''),
     busy = ref(false),
     error = ref(''),
     success = ref(''),
-    integration = ref<{ message: string } | null>(null);
+    integration = ref<{ message: string } | null>(null),
+    current = computed(() => currencySettings(rates.value));
   async function load() {
     try {
       const [r, i] = await Promise.all([
@@ -30,7 +32,7 @@ export function useSettings() {
     try {
       await api('/rates', {
         method: 'POST',
-        body: { currency: currency.value, rate: String(rate.value) },
+        body: ratePayload(currency.value, String(rate.value)),
       });
       rate.value = '';
       success.value = 'Tasa registrada. Los pedidos anteriores conservan su tasa original.';
@@ -41,5 +43,5 @@ export function useSettings() {
       busy.value = false;
     }
   }
-  return { rates, currency, rate, busy, error, success, integration, save, load };
+  return { rates, currency, rate, busy, error, success, integration, current, save, load };
 }
