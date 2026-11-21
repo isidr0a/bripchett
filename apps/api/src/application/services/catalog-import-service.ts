@@ -45,7 +45,7 @@ export class CatalogImportService {
         input.rows.map((row) => ({ code: row.code, rif: 'rif' in row ? row.rif : '' })),
       ),
       zoneId ? this.repository.zone(zoneId) : null,
-      currency && currency !== 'COP' ? this.repository.latestRate('COP') : null,
+      currency === 'USD' ? this.repository.latestRate('COP') : null,
       currency === 'VES' ? this.repository.latestRate('VES') : null,
       automatic ? this.repository.activeZones() : [],
     ]);
@@ -53,7 +53,7 @@ export class CatalogImportService {
     const fallback = zones.find((item) => item.nameKey === unclassifiedZoneKey);
     if (automatic && !fallback)
       fail(409, 'IMPORT_ZONE', 'La zona predeterminada Sin clasificar no está disponible.');
-    if (currency && currency !== 'COP' && (!copRate || (currency === 'VES' && !vesRate)))
+    if ((currency === 'USD' && !copRate) || (currency === 'VES' && !vesRate))
       fail(422, 'IMPORT_RATE', 'Registra una tasa vigente para la moneda seleccionada.');
     const byCode = new Map<string, CatalogImportRecord[]>();
     const byRif = new Map<string, CatalogImportRecord[]>();
@@ -119,8 +119,7 @@ export class CatalogImportService {
       };
       if ('price' in row) {
         const priceCop = new Decimal(row.price)
-          .mul(copRate?.rate ?? 1)
-          .div(vesRate?.rate ?? 1)
+          .mul(copRate?.rate ?? vesRate?.rate ?? 1)
           .toFixed(2, Decimal.ROUND_HALF_UP);
         if (!productSchema.safeParse({ sku: code, name, priceCop }).success) {
           decision('omitir', 'El precio convertido no está dentro del rango permitido.');

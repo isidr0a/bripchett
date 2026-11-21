@@ -49,7 +49,7 @@ export class OrderService {
       this.catalogRepository.latestRate('COP'),
       input.currency === 'VES' ? this.catalogRepository.latestRate('VES') : null,
     ]);
-    if (input.currency !== 'COP' && (!copRate || (input.currency === 'VES' && !vesRate)))
+    if ((input.currency === 'USD' && !copRate) || (input.currency === 'VES' && !vesRate))
       fail(
         422,
         'RATE_MISSING',
@@ -60,7 +60,7 @@ export class OrderService {
         ? '1'
         : input.currency === 'USD'
           ? new Decimal(1).div(copRate!.rate).toString()
-          : new Decimal(vesRate!.rate).div(copRate!.rate).toString();
+          : new Decimal(1).div(vesRate!.rate).toString();
     const rateId = input.currency === 'VES' ? vesRate!.id : null;
     const copRateId = copRate?.id ?? null;
     const products = await this.catalogRepository.findProducts(input.items.map((i) => i.productId));

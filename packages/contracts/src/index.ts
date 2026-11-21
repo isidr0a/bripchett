@@ -112,7 +112,7 @@ export function clientMissing(
 }
 const decimalString = z
   .string()
-  .regex(/^\d{1,10}(\.\d{1,6})?$/, 'Ingresa un número positivo con hasta 6 decimales.')
+  .regex(/^\d{1,10}(\.\d{1,10})?$/, 'Ingresa un número positivo con hasta 10 decimales.')
   .refine((v) => Number(v) > 0, 'El valor debe ser mayor que cero.');
 export const productSchema = z.object({
   name: z.string().trim().min(2).max(150),
@@ -128,13 +128,17 @@ export type Product = z.infer<typeof productSchema> & {
   updatedAt: string;
   photoId?: string | null;
 };
-export const rateSchema = z.object({ currency: z.enum(['COP', 'VES']), rate: decimalString });
+export const rateSchema = z.discriminatedUnion('currency', [
+  z.object({ currency: z.literal('COP'), rate: decimalString }),
+  z.object({ currency: z.literal('VES'), rate: decimalString, rateUnit: z.literal('COP_per_VES') }),
+]);
 export type Rate = {
   id: string;
   currency: Currency;
   rate: string;
   createdAt: string;
   createdBy: string;
+  rateBase: 'USD' | 'VES';
 };
 export const userSchema = z.object({
   name: z.string().trim().min(2).max(100),

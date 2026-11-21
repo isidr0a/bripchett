@@ -16,7 +16,7 @@ const { rates, currency, rate, busy, error, success, integration, current, save,
     <h2>Configuración de monedas</h2>
     <p class="muted">
       Los precios y pedidos usan pesos colombianos como moneda base. Las tasas de dólares y
-      bolívares se registran por cada dólar y se usan para calcular su equivalencia en pesos.
+      bolívares se registran por separado como su valor en pesos colombianos.
     </p>
     <div class="metrics rates">
       <article class="inset card">
@@ -28,14 +28,7 @@ const { rates, currency, rate, busy, error, success, integration, current, save,
       </article>
       <article class="inset card">
         <small>Bolívar · VES</small>
-        <strong>
-          {{
-            current.copPerVes === null
-              ? 'Sin configurar'
-              : `1 VES ≈ ${new Intl.NumberFormat('es-CO', { maximumSignificantDigits: 8 }).format(current.copPerVes)} COP`
-          }}
-        </strong>
-        <small v-if="current.ves">1 USD = {{ current.ves.rate }} VES</small>
+        <strong>{{ current.ves ? `1 VES = ${current.ves.rate} COP` : 'Sin configurar' }}</strong>
       </article>
     </div>
     <form class="toolbar" @submit.prevent="save">
@@ -46,20 +39,19 @@ const { rates, currency, rate, busy, error, success, integration, current, save,
         </select></label
       >
       <label
-        >{{ currency === 'USD' ? 'Pesos colombianos por 1 USD' : 'Bolívares por 1 USD'
+        >{{ currency === 'USD' ? 'Pesos colombianos por 1 USD' : 'Pesos colombianos por 1 VES'
         }}<input
           v-model="rate"
           type="text"
           inputmode="decimal"
-          pattern="[0-9]+(\.[0-9]{1,6})?"
-          :placeholder="currency === 'USD' ? 'Ej. 4200.00' : 'Ej. 120.00'"
+          pattern="[0-9]+(\.[0-9]{1,10})?"
+          :placeholder="currency === 'USD' ? 'Ej. 4200.00' : 'Ej. 35.00'"
           required
       /></label>
       <button :disabled="busy">{{ busy ? 'Guardando…' : 'Guardar tasa' }}</button>
     </form>
     <p class="muted small">
-      Para convertir bolívares se necesitan las tasas de dólar y bolívar. Los pedidos anteriores
-      conservan su tasa.
+      Cada moneda tiene su propia tasa en pesos. Los pedidos anteriores conservan su tasa.
     </p>
     <div class="table-wrap">
       <table v-responsive-table>
@@ -76,13 +68,27 @@ const { rates, currency, rate, busy, error, success, integration, current, save,
           <tr v-for="r in rates" :key="r.id">
             <td>{{ dateTime(r.createdAt) }}</td>
             <td>{{ r.currency === 'COP' ? 'Dólar · USD' : 'Bolívar · VES' }}</td>
-            <td>1 USD = {{ r.rate }} {{ r.currency }}</td>
+            <td>
+              {{
+                r.currency === 'COP'
+                  ? `1 USD = ${r.rate} COP`
+                  : r.rateBase === 'VES'
+                    ? `1 VES = ${r.rate} COP`
+                    : 'Tasa histórica en USD: ' + r.rate + ' VES'
+              }}
+            </td>
             <td>{{ r.createdBy }}</td>
             <td>
               <DeleteRecord
                 :id="r.id"
                 type="rates"
-                :label="'1 USD = ' + r.rate + ' ' + r.currency"
+                :label="
+                  r.currency === 'COP'
+                    ? `1 USD = ${r.rate} COP`
+                    : r.rateBase === 'VES'
+                      ? `1 VES = ${r.rate} COP`
+                      : `Tasa histórica: ${r.rate} VES por USD`
+                "
                 @deleted="load"
               />
             </td>

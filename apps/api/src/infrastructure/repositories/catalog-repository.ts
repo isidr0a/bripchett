@@ -284,7 +284,7 @@ export class D1CatalogRepository extends D1Repository implements CatalogReposito
   async listRates() {
     const result = await this.db
       .prepare(
-        'SELECT r.id,r.currency,r.rate,r.created_at createdAt,u.name createdBy FROM exchange_rates r JOIN user u ON u.id=r.created_by WHERE r.deleted_at IS NULL ORDER BY r.created_at DESC,r.id DESC LIMIT 100',
+        'SELECT r.id,r.currency,r.rate,r.rate_base rateBase,r.created_at createdAt,u.name createdBy FROM exchange_rates r JOIN user u ON u.id=r.created_by WHERE r.deleted_at IS NULL ORDER BY r.created_at DESC,r.id DESC LIMIT 100',
       )
       .all<Rate>();
     return result.results;
@@ -292,7 +292,7 @@ export class D1CatalogRepository extends D1Repository implements CatalogReposito
   latestRate(currency: Currency) {
     return this.db
       .prepare(
-        'SELECT id,rate FROM exchange_rates WHERE currency=? AND deleted_at IS NULL ORDER BY created_at DESC,id DESC LIMIT 1',
+        "SELECT id,rate FROM exchange_rates WHERE currency=? AND deleted_at IS NULL AND (currency<>'VES' OR rate_base='VES') ORDER BY created_at DESC,id DESC LIMIT 1",
       )
       .bind(currency)
       .first<{ id: string; rate: string }>();
@@ -301,9 +301,9 @@ export class D1CatalogRepository extends D1Repository implements CatalogReposito
     await this.db.batch([
       this.db
         .prepare(
-          'INSERT INTO exchange_rates(id,currency,rate,created_at,created_by) VALUES(?,?,?,?,?)',
+          'INSERT INTO exchange_rates(id,currency,rate,created_at,created_by,rate_base) VALUES(?,?,?,?,?,?)',
         )
-        .bind(id, d.currency, d.rate, at, this.actorId),
+        .bind(id, d.currency, d.rate, at, this.actorId, d.currency === 'VES' ? 'VES' : 'USD'),
       this.audit('registrar_tasa', 'tasa', id, d),
     ]);
   }

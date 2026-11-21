@@ -35,7 +35,7 @@ const { from, to, seller, sellers, data, busy, error, generate, download } = use
           ><strong>{{ money(t.total, t.currency as Currency) }}</strong>
         </article>
         <article class="card inset">
-          <small>Consolidado base USD</small
+          <small>Consolidado equivalente USD</small
           ><strong>{{
             data.totalUsd === null ? 'No disponible' : money(data.totalUsd, 'USD')
           }}</strong>

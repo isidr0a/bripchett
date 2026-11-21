@@ -123,9 +123,13 @@ for (const [sku, name, priceCop] of [
   await request('/api/v1/products', { sku, name, priceCop, active: true }, a.cookie);
 for (const [currency, rate] of [
   ['COP', '4200.00'],
-  ['VES', '120.00'],
+  ['VES', '35.00'],
 ])
-  await request('/api/v1/rates', { currency, rate }, a.cookie);
+  await request(
+    '/api/v1/rates',
+    { currency, rate, ...(currency === 'VES' ? { rateUnit: 'COP_per_VES' } : {}) },
+    a.cookie,
+  );
 await mkdir('.credentials', { recursive: true, mode: 0o700 });
 await writeFile(
   '.credentials/desarrollo.json',

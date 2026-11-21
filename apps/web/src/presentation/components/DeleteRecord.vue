@@ -48,8 +48,8 @@ async function submit() {
         </p>
         <p v-if="type === 'users'" class="muted small">Se cerrarán sus sesiones activas.</p>
         <p v-if="type === 'rates'" class="muted small">
-          Si es la tasa vigente, se usará la anterior disponible de esa moneda. Si no hay otra, no
-          se podrán cotizar pedidos en esa moneda.
+          Si es la tasa vigente, se usará la anterior disponible en pesos de esa moneda. Si no hay
+          otra, no se podrán cotizar pedidos en esa moneda.
         </p>
         <p v-if="type === 'routes'" class="muted small">
           También se enviarán a la papelera las paradas pendientes de los recorridos eliminados.

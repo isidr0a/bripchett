@@ -205,6 +205,7 @@ beforeAll(async () => {
     '0009_catalog_import.sql',
     '0010_import_zone_classification.sql',
     '0011_prices_cop.sql',
+    '0012_ves_in_cop.sql',
   ]) {
     if (file === '0006_commercial_zones.sql') await oldZoneFixtures();
     if (file === '0007_production_report.sql') await legacyProductionFixtures();
@@ -474,12 +475,31 @@ describe('Precios, pedidos y preparación', () => {
       (await request('/api/v1/orders/quote', 'vendedor', 'POST', { ...input(), currency: 'USD' }))
         .body.error.code,
     ).toBe('RATE_MISSING');
+    const independentRate = await request('/api/v1/rates', 'administracion', 'POST', {
+      currency: 'VES',
+      rate: '40',
+      rateUnit: 'COP_per_VES',
+    });
+    const vesWithoutDollar = await request('/api/v1/orders/quote', 'vendedor', 'POST', {
+      ...input(),
+      currency: 'VES',
+    });
+    expect(vesWithoutDollar.status).toBe(200);
+    expect(vesWithoutDollar.body.total).toBe('173.25');
+    expect(vesWithoutDollar.body.totalUsd).toBeNull();
+    await db.prepare('DELETE FROM exchange_rates WHERE id=?').bind(independentRate.body.id).run();
     for (const [currency, rate] of [
       ['COP', '4200.123456'],
-      ['VES', '120.50'],
+      ['VES', '34.86'],
     ])
       expect(
-        (await request('/api/v1/rates', 'administracion', 'POST', { currency, rate })).status,
+        (
+          await request('/api/v1/rates', 'administracion', 'POST', {
+            currency,
+            rate,
+            ...(currency === 'VES' ? { rateUnit: 'COP_per_VES' } : {}),
+          })
+        ).status,
       ).toBe(201);
   });
   it('calcula las tres monedas y rechaza cantidades o productos repetidos', async () => {
@@ -1233,8 +1253,10 @@ describe('Papelera y borrado lógico', () => {
         active: true,
       })
     ).body;
-    const first = (await post('rates', { currency: 'VES', rate: '100' })).body;
-    const latest = (await post('rates', { currency: 'VES', rate: '125' })).body;
+    const first = (await post('rates', { currency: 'VES', rate: '43', rateUnit: 'COP_per_VES' }))
+      .body;
+    const latest = (await post('rates', { currency: 'VES', rate: '34.4', rateUnit: 'COP_per_VES' }))
+      .body;
     const payload = {
       clientId: client.id,
       currency: 'VES',
@@ -2241,7 +2263,11 @@ describe('Importación de catálogos', () => {
 
   it('convierte importaciones en USD y VES a COP y rechaza tasas cambiadas', async () => {
     await request('/api/v1/rates', 'administracion', 'POST', { currency: 'COP', rate: '4000' });
-    await request('/api/v1/rates', 'administracion', 'POST', { currency: 'VES', rate: '100' });
+    await request('/api/v1/rates', 'administracion', 'POST', {
+      currency: 'VES',
+      rate: '40',
+      rateUnit: 'COP_per_VES',
+    });
     for (const [currency, price, code] of [
       ['USD', '2', 'IMP-USD'],
       ['VES', '200', 'IMP-VES'],
@@ -2266,13 +2292,32 @@ describe('Importación de catálogos', () => {
           ?.price_cop,
       ).toBe('8000.00');
     }
+    const vesQuoteInput = {
+      clientId: client.id,
+      currency: 'VES',
+      items: [{ productId: product.id, quantity: 1 }],
+    };
+    const beforeUsdChange = await request(
+      '/api/v1/orders/quote',
+      'vendedor',
+      'POST',
+      vesQuoteInput,
+    );
+    await request('/api/v1/rates', 'administracion', 'POST', { currency: 'COP', rate: '4100' });
+    const afterUsdChange = await request('/api/v1/orders/quote', 'vendedor', 'POST', vesQuoteInput);
+    expect(afterUsdChange.body.rate).toBe(beforeUsdChange.body.rate);
+    expect(afterUsdChange.body.total).toBe(beforeUsdChange.body.total);
     const input = {
       kind: 'prices',
       currency: 'VES',
       rows: [{ line: 1, code: 'IMP-STALE', name: 'Pan', price: '2' }],
     };
     const preview = await request(path, 'administracion', 'POST', input);
-    await request('/api/v1/rates', 'administracion', 'POST', { currency: 'VES', rate: '105' });
+    await request('/api/v1/rates', 'administracion', 'POST', {
+      currency: 'VES',
+      rate: '41',
+      rateUnit: 'COP_per_VES',
+    });
     expect(
       (await request(path, 'administracion', 'POST', { ...input, revision: preview.body.revision }))
         .status,

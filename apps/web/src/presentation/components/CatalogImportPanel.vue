@@ -137,11 +137,8 @@ function onFile(event: Event) {
           {{ preview.summary.creates }} altas · {{ preview.summary.updates }} actualizaciones ·
           {{ preview.summary.skipped }} omitidas · {{ preview.summary.unchanged }} sin cambios.
         </p>
-        <p v-if="preview.copRate" class="muted">
-          Tasas: 1 USD = {{ preview.copRate }} COP<span v-if="preview.vesRate">
-            y {{ preview.vesRate }} VES</span
-          >.
-        </p>
+        <p v-if="preview.copRate" class="muted">Tasa: 1 USD = {{ preview.copRate }} COP.</p>
+        <p v-if="preview.vesRate" class="muted">Tasa: 1 VES = {{ preview.vesRate }} COP.</p>
         <p v-if="preview.zoneWarning" class="notice" role="status">{{ preview.zoneWarning }}</p>
         <p v-if="dirty" class="notice" role="status">
           Se modificó la selección. Genera una nueva vista previa.

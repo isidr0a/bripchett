@@ -11,7 +11,7 @@ import { D1Repository } from './d1-repository';
 const canonicalRif = (column: string) =>
   `upper(replace(replace(replace(replace(${column},' ',''),'-',''),'.',''),char(9),''))`;
 const latestRate = `SELECT id,rate FROM exchange_rates
-  WHERE currency=? AND deleted_at IS NULL ORDER BY created_at DESC,id DESC LIMIT 1`;
+  WHERE currency=? AND deleted_at IS NULL AND (currency<>'VES' OR rate_base='VES') ORDER BY created_at DESC,id DESC LIMIT 1`;
 const zone = 'SELECT id,name FROM zones WHERE id=? AND active=1 AND deleted_at IS NULL';
 
 export class D1CatalogImportRepository extends D1Repository implements CatalogImportRepository {

@@ -57,7 +57,7 @@ El servidor vuelve a comprobar el rol, la cuenta activa y las asignaciones en ca
 - Una visita sin pedido puede dejar programada la siguiente. Un pedido asociado a una visita la completa una sola vez.
 - Los pedidos usan cantidades enteras positivas y un resumen calculado por el servidor. Administración valida el pedido para generar una única comanda. Se puede anular antes de iniciar la preparación.
 - Administración, Preparación y Supervisión consultan **Comandas → Totales de producción**. El consolidado suma unidades por producto y exporta un CSV con los filtros aplicados. Los filtros incluyen estado, fecha de emisión, zona registrada en el pedido, recorrido individual o serie, y cliente.
-- Los precios base y pedidos nuevos usan COP por defecto. Para USD se necesita la tasa COP por dólar; para VES también se necesita la tasa VES por dólar. Se redondea el precio unitario convertido a dos decimales antes de multiplicar por la cantidad. Cada pedido conserva sus precios y tasa. Los reportes separan monedas y consolidan el importe base USD histórico.
+- Los precios base y pedidos nuevos usan COP por defecto. Para USD y VES se registra por separado el valor de cada moneda en COP. Se redondea el precio unitario convertido a dos decimales antes de multiplicar por la cantidad. Cada pedido conserva sus precios y tasa. Los reportes separan monedas y consolidan el importe base USD histórico.
 - Los borradores se guardan por usuario en el navegador. Ante una respuesta de envío incierta, el mismo pedido se reintenta con su clave original para evitar duplicados. Se necesita conexión; no hay sincronización offline.
 - Zona horaria: `America/Caracas`.
 
@@ -119,7 +119,7 @@ previa antes de confirmar. El archivo se lee en el navegador; la API valida los 
 solo los cambios confirmados, en un lote auditado.
 
 - **Precios:** coteja el código de producto con el SKU. Verificar la moneda de «Precio 1»; COP se selecciona por defecto.
-  Los valores en USD o VES se convierten a COP con las tasas vigentes. Se actualizan el nombre y el
+  Los valores en USD o VES se convierten a COP con la tasa vigente de cada moneda. Se actualizan el nombre y el
   precio base; «Existencia» y los importes de pedidos anteriores no se modifican.
 - **Clientes:** coteja el código o un RIF inequívoco. Se actualizan nombre, RIF faltante, teléfono
   y dirección según el reporte, conservando la zona, vendedor, estado, GPS y agenda existentes.
