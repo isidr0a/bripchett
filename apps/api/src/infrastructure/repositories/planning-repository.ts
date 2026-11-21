@@ -13,7 +13,7 @@ const routeSelect =
   "SELECT r.id,r.name,r.date,r.seller_id sellerId,u.name sellerName,r.series_id seriesId,r.recurrence_json recurrenceJson,r.zone_id zoneId,coalesce(z.name,'') zone FROM routes r JOIN user u ON u.id=r.seller_id LEFT JOIN zones z ON z.id=r.zone_id";
 
 const visitSelect =
-  'SELECT v.id,v.client_id clientId,c.name clientName,v.seller_id sellerId,u.name sellerName,v.scheduled_at scheduledAt,v.status,v.notes,v.order_id orderId,EXISTS(SELECT 1 FROM orders o WHERE o.id=v.order_id AND o.deleted_at IS NOT NULL) orderDeleted,v.route_id routeId FROM visits v JOIN clients c ON c.id=v.client_id JOIN user u ON u.id=v.seller_id';
+  "SELECT v.id,v.client_id clientId,coalesce(nullif(c.name,''),c.code) clientName,v.seller_id sellerId,u.name sellerName,v.scheduled_at scheduledAt,v.status,v.notes,v.order_id orderId,EXISTS(SELECT 1 FROM orders o WHERE o.id=v.order_id AND o.deleted_at IS NOT NULL) orderDeleted,v.route_id routeId FROM visits v JOIN clients c ON c.id=v.client_id JOIN user u ON u.id=v.seller_id";
 const localTime = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'America/Caracas',
   hour: '2-digit',

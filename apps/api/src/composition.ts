@@ -7,6 +7,10 @@ import { DisabledA2Gateway } from './infrastructure/integrations/a2-gateway';
 import type { SessionUser } from '@briochett/contracts';
 import type { Bindings } from './config/bindings';
 import { CatalogService } from './application/services/catalog-service';
+import { CatalogImportService } from './application/services/catalog-import-service';
+import { D1CatalogImportRepository } from './infrastructure/repositories/catalog-import-repository';
+import { JevZoneClassifier } from './infrastructure/integrations/jev-zone-classifier';
+
 import { OrderService } from './application/services/order-service';
 import { PlanningService } from './application/services/planning-service';
 import { ManagementService } from './application/services/management-service';
@@ -41,6 +45,13 @@ export function createServices(
   const catalog = new CatalogService(catalogRepository, actor, zones);
   return {
     catalog,
+    catalogImport: new CatalogImportService(
+      new D1CatalogImportRepository(env.DB, actor.id),
+      new JevZoneClassifier(env.TYPESAFE_API_KEY),
+      env.BETTER_AUTH_SECRET,
+      actor,
+    ),
+
     zones,
     photos: new PhotoService(
       new D1PhotoRepository(env.DB, actor),

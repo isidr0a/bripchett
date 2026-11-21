@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import {
   clientSchema,
+  catalogImportSchema,
   completionSchema,
   productSchema,
   rateSchema,
@@ -88,4 +89,7 @@ catalogController.get('/rates', allow(...viewRoles), async (c) =>
 );
 catalogController.post('/rates', adminOnly, async (c) =>
   c.json(await c.get('services').catalog.createRate(await body(c, rateSchema)), 201),
+);
+catalogController.post('/catalog-import', adminOnly, async (c) =>
+  c.json(await c.get('services').catalogImport.run(await body(c, catalogImportSchema))),
 );

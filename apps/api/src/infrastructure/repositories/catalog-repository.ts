@@ -88,9 +88,10 @@ export class D1CatalogRepository extends D1Repository implements CatalogReposito
     const where = ['c.deleted_at IS NULL'],
       args: (string | number)[] = [];
     if (sellerId) {
-      where.push('c.seller_id=? AND c.active=1');
+      where.push('c.seller_id=?');
       args.push(sellerId);
-    } else if (active) where.push('c.active=1');
+    }
+    if (active) where.push('c.active=1');
     if (zoneId) {
       where.push('c.zone_id=?');
       args.push(zoneId);

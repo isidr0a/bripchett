@@ -51,7 +51,7 @@ const {
       <div class="split">
         <div>
           <small class="muted">Cliente</small>
-          <h3>{{ client?.name }}</h3>
+          <h3>{{ client?.name || client?.code }}</h3>
         </div>
         <button class="secondary" @click="stage = 'client'">Buscar o cambiar cliente</button>
       </div>
@@ -107,7 +107,7 @@ const {
       </div>
     </div>
     <div v-else-if="stage === 'review' && draft.quote" class="stack">
-      <h3>{{ client?.name || 'Cliente seleccionado' }}</h3>
+      <h3>{{ client?.name || client?.code || 'Cliente seleccionado' }}</h3>
       <p>{{ draft.currency }} · Tasa: 1 USD = {{ draft.quote.rate }} {{ draft.currency }}</p>
       <div v-for="line in draft.quote.items" :key="line.productId" class="review-line">
         <div>

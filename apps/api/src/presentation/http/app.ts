@@ -18,17 +18,24 @@ import { openapi } from './openapi';
 import { integrationController } from './controllers/integration-controller';
 import { photoController, photoUploadPath } from './controllers/photo-controller';
 const app = new Hono<AppEnv>();
-const standardBodyLimit = bodyLimit({
-  maxSize: 256 * 1024,
-  onError: (c) =>
-    c.json(
-      { error: { code: 'BODY_TOO_LARGE', message: 'La solicitud es demasiado grande.' } },
-      413,
-    ),
+const requestBodyLimit = (maxSize: number) =>
+  bodyLimit({
+    maxSize,
+    onError: (c) =>
+      c.json(
+        { error: { code: 'BODY_TOO_LARGE', message: 'La solicitud es demasiado grande.' } },
+        413,
+      ),
+  });
+const standardBodyLimit = requestBodyLimit(256 * 1024);
+const catalogImportBodyLimit = requestBodyLimit(3 * 1024 * 1024);
+app.use('*', secureHeaders(), (c, next) => {
+  if (c.req.method === 'POST') {
+    if (photoUploadPath.test(c.req.path)) return next();
+    if (c.req.path === '/api/v1/catalog-import') return catalogImportBodyLimit(c, next);
+  }
+  return standardBodyLimit(c, next);
 });
-app.use('*', secureHeaders(), (c, next) =>
-  c.req.method === 'POST' && photoUploadPath.test(c.req.path) ? next() : standardBodyLimit(c, next),
-);
 app.use('*', async (c, next) => {
   c.set('requestId', uid());
   c.header('X-Request-Id', c.get('requestId'));
@@ -121,6 +128,7 @@ app.onError((error, c) => {
   if (error instanceof HTTPException) return error.getResponse();
   const message = String(error.message);
   const trashErrors: Record<string, string> = {
+    ZONE_DEFAULT: 'Sin clasificar es la zona predeterminada de la importación.',
     ZONE_DEPENDENCIES:
       'Reasigna los clientes vigentes y resuelve las rutas pendientes antes de retirar la zona.',
     ZONE_UNAVAILABLE: 'La zona dejó de estar activa. Selecciona otra zona.',

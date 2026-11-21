@@ -109,3 +109,35 @@ Destino del frontend: <https://app.briochettvzla.com>. Destino de la API: <https
 `apps/web/.env.production` fija el origen público de la API. Las reglas `_redirects` de Pages permiten recargar rutas de la SPA. Las cabeceras incluyen CSP y limitan el uso de geolocalización al propio sitio. Los despliegues conservan el dominio raíz de la web pública.
 
 No incluye facturación fiscal, cobros, inventario, optimización de rutas ni la conexión real con a2.
+
+## Importar clientes o precios desde Excel
+
+En **Configuración → Importar clientes y precios**, Administración puede seleccionar los reportes
+**General de Clientes** y **Lista de Precios** en formatos `.xls` o `.xlsx`. La vista previa muestra
+altas, actualizaciones, filas sin cambios y omisiones. Se pueden excluir filas y regenerar la vista
+previa antes de confirmar. El archivo se lee en el navegador; la API valida los registros y guarda
+solo los cambios confirmados, en un lote auditado.
+
+- **Precios:** coteja el código de producto con el SKU. Seleccionar la moneda de «Precio 1».
+  Los valores en COP o VES se convierten a USD con la tasa vigente. Se actualizan el nombre y el
+  precio base; «Existencia» y los importes de pedidos anteriores no se modifican.
+- **Clientes:** coteja el código o un RIF inequívoco. Se actualizan nombre, RIF faltante, teléfono
+  y dirección según el reporte, conservando la zona, vendedor, estado, GPS y agenda existentes.
+  Si «Descripción» está vacía, se conserva el nombre registrado o se deja pendiente para un alta.
+  Al habilitar las altas, Jev propone una zona activa por dirección. Las direcciones sin evidencia
+  suficiente quedan en **Sin clasificar**, la zona predeterminada. También se puede elegir
+  manualmente una sola zona para el lote. Las altas quedan sin vendedor.
+  El archivo no trae todos los campos requeridos para registrar un pedido.
+- Las filas incompletas, duplicadas, ambiguas o correspondientes a registros en la Papelera se
+  muestran para revisión. La importación manual es independiente de la conexión automática con a2.
+- La migración `0009_catalog_import.sql` añade la referencia de origen del cliente. Aplicarla antes
+  de publicar el frontend y la API que incorporan la importación.
+
+La migración `0010_import_zone_classification.sql` crea o reutiliza **Sin clasificar**. Para activar
+Jev localmente, agrega `TYPESAFE_API_KEY` a `apps/api/.dev.vars` siguiendo
+`apps/api/.dev.vars.example`. En Workers, configura el mismo nombre como secreto mediante
+`wrangler secret put TYPESAFE_API_KEY`. La clave se obtiene en la
+[consola de TypeSafe](https://console.typesafe.ai/). La API envía la dirección y los nombres de las
+zonas activas durante la vista previa de nuevas altas. Al confirmar, aplica las asignaciones
+revisadas. Si falta la clave o la petición a Jev falla, la vista previa indica qué altas quedan en
+**Sin clasificar**.

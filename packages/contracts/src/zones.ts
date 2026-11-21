@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 export const zoneIdSchema = z.string().min(1).max(128);
+export const unclassifiedZoneKey = 'sin clasificar';
 export const zoneSchema = z.object({
   name: z.string().trim().min(1).max(100),
   active: z.boolean().default(true),

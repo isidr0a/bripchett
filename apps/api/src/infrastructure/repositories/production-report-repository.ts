@@ -76,7 +76,7 @@ const optionRows: Record<ProductionOptionType, string> = {
           UNION ALL
           SELECT seriesKey, routeName || ' · Serie completa', routeName || ' Serie completa', issued, commandId
           FROM filtered WHERE seriesKey IS NOT NULL`,
-  client: `SELECT clientId AS value, clientName || ' · ' || clientCode AS label,
+  client: `SELECT clientId AS value, coalesce(nullif(clientName,'') || ' · ','') || clientCode AS label,
              clientName || ' ' || clientCode AS searchable, issued, commandId FROM filtered`,
 };
 

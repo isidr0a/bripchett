@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  catalogImportSchema,
   trashTypes,
   clientSchema,
   sellerClientSchema,
@@ -194,6 +195,19 @@ operation(
   completionSchema,
 );
 operation('/api/v1/products/{id}', 'patch', 'Actualizar producto', productSchema);
+operation('/api/v1/catalog-import', 'post', 'Previsualizar y aplicar lotes de clientes o precios');
+const catalogImport = paths['/api/v1/catalog-import'].post;
+catalogImport.requestBody = {
+  required: true,
+  description:
+    'Para altas con Jev, envía classifyZones. Al confirmar, devuelve revision y zoneAssignments de la vista previa.',
+  content: { 'application/json': { schema: z.toJSONSchema(catalogImportSchema, { io: 'input' }) } },
+};
+catalogImport.responses[200] = {
+  description:
+    'Vista previa o resultado del lote. La clasificación incluye zoneAssignments y puede advertir con zoneWarning.',
+};
+
 operation('/api/v1/users/{id}', 'patch', 'Actualizar cuenta', userUpdateSchema);
 operation(
   '/api/v1/users/{id}/password',

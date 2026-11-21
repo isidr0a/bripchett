@@ -3,6 +3,8 @@ import { allVisitDays, visitDaysSchema, zoneIdSchema } from './zones';
 export * from './zones';
 export * from './production-report';
 export * from './record-photo';
+export * from './catalog-import';
+
 import { routeFrequencies, recurringRouteDates, type RouteRecurrence } from './route-recurrence';
 export { routeFrequencies, recurringRouteDates, addCalendarDays } from './route-recurrence';
 export type { RouteFrequency, RouteRecurrence } from './route-recurrence';

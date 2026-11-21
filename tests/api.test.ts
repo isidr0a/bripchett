@@ -1,4 +1,4 @@
-import { beforeAll, afterAll, describe, it, expect } from 'vitest';
+import { beforeAll, afterAll, describe, it, expect, vi } from 'vitest';
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 import { readFile } from 'node:fs/promises';
 import app from '../apps/api/src/index';
@@ -202,6 +202,8 @@ beforeAll(async () => {
     '0006_commercial_zones.sql',
     '0007_production_report.sql',
     '0008_record_photos.sql',
+    '0009_catalog_import.sql',
+    '0010_import_zone_classification.sql',
   ]) {
     if (file === '0006_commercial_zones.sql') await oldZoneFixtures();
     if (file === '0007_production_report.sql') await legacyProductionFixtures();
@@ -1509,12 +1511,20 @@ describe('Zonas comerciales', () => {
     ).toBe('ROUTE_ZONE');
     const allowed = (await call('clients?zoneId=' + south + '&sellerId=' + users.vendedor.id)).body;
     expect(allowed.items.map((c: any) => c.id)).toEqual([a.id]);
+    const inactive = await customer('Cliente inactivo filtrado', south);
+    expect(
+      (await call('clients/' + inactive.id, 'PATCH', { ...inactive.input, active: false })).status,
+    ).toBe(200);
+    const query = 'clients?zoneId=' + south + '&sellerId=' + users.vendedor.id + '&q=inactivo';
+    expect((await call(query)).body.items.map((c: any) => c.id)).toEqual([inactive.id]);
+    expect((await call(query + '&active=true')).body.items).toEqual([]);
+    expect((await call(query, 'GET', undefined, 'vendedor')).body.items).toEqual([]);
     expect(
       (await call('zones/' + south, 'PATCH', { name: 'Llanura Naciente', active: true })).status,
     ).toBe(200);
-    expect((await call('clients?q=Llanura%20Naciente')).body.items.map((c: any) => c.id)).toEqual([
-      a.id,
-    ]);
+    expect((await call('clients?q=Llanura%20Naciente')).body.items.map((c: any) => c.id)).toEqual(
+      expect.arrayContaining([a.id, inactive.id]),
+    );
     const recurring = await call('routes', 'POST', {
       ...r.input,
       date: '2029-02-08',
@@ -2139,5 +2149,333 @@ describe('Fotos privadas', () => {
       .bind(users['photo-other'].id)
       .run();
     expect((await request(profile, 'photo-other')).status).toBe(401);
+  });
+});
+
+describe('Importación de catálogos', () => {
+  const path = '/api/v1/catalog-import';
+
+  it('revisa y aplica precios en el rol administrativo sin escribir durante la vista previa', async () => {
+    await request('/api/v1/rates', 'administracion', 'POST', { currency: 'COP', rate: '4000' });
+    const input = {
+      kind: 'prices',
+      currency: 'COP',
+      rows: [{ line: 12, code: 'IMP-PAN', name: 'Pan de importación', price: '7000' }],
+    };
+    expect((await request(path, 'vendedor', 'POST', input)).status).toBe(403);
+    const preview = await request(path, 'administracion', 'POST', input);
+    expect(preview.body.summary).toEqual({ creates: 1, updates: 0, skipped: 0, unchanged: 0 });
+    expect(preview.body.decisions[0].note).toBe('USD 1.75');
+    expect(await db.prepare("SELECT id FROM products WHERE sku='IMP-PAN'").first()).toBeNull();
+    const result = await request(path, 'administracion', 'POST', {
+      ...input,
+      revision: preview.body.revision,
+    });
+    expect(result.status, JSON.stringify(result.body)).toBe(200);
+    const product = await db
+      .prepare("SELECT id,price_usd FROM products WHERE sku='IMP-PAN'")
+      .first();
+    expect(product?.price_usd).toBe('1.75');
+    const updatedInput = { ...input, rows: [{ ...input.rows[0], price: '7200' }] };
+    const updated = await request(path, 'administracion', 'POST', updatedInput);
+    expect(updated.body.summary.updates).toBe(1);
+    expect(
+      (
+        await request(path, 'administracion', 'POST', {
+          ...updatedInput,
+          revision: updated.body.revision,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      await db.prepare("SELECT id,price_usd FROM products WHERE sku='IMP-PAN'").first(),
+    ).toEqual({ id: product?.id, price_usd: '1.80' });
+  });
+
+  it('vincula por RIF, conserva la ficha operativa y crea clientes solo con zona confirmada', async () => {
+    const zone = (
+      await request('/api/v1/zones', 'administracion', 'POST', {
+        name: 'Zona importación de prueba',
+      })
+    ).body;
+    const existing = (
+      await request('/api/v1/clients', 'administracion', 'POST', {
+        name: 'Cliente antes de importar',
+        rif: 'J-781234567',
+        zoneId: zone.id,
+        sellerId: users.vendedor.id,
+        phone: '04240000000',
+        active: true,
+        recurrenceStart: '2026-11-02',
+      })
+    ).body;
+    const rows = [
+      {
+        line: 11,
+        code: 'XL-A',
+        name: 'Cliente actualizado',
+        rif: 'J781234567',
+        phone: '',
+        address: 'Dirección de prueba',
+        active: false,
+      },
+      {
+        line: 15,
+        code: 'XL-B',
+        name: 'Cliente nuevo',
+        rif: 'J781234568',
+        phone: '04240000001',
+        address: '',
+        active: true,
+      },
+      {
+        line: 17,
+        code: 'XL-D',
+        name: 'Duplicado primero',
+        rif: '',
+        phone: '',
+        address: '',
+        active: true,
+      },
+      {
+        line: 18,
+        code: 'XL-D',
+        name: 'Duplicado segundo',
+        rif: '',
+        phone: '',
+        address: '',
+        active: true,
+      },
+    ];
+    const withoutZone = await request(path, 'administracion', 'POST', { kind: 'clients', rows });
+    expect(withoutZone.body.summary).toMatchObject({ creates: 0, updates: 1, skipped: 3 });
+    const input = { kind: 'clients', zoneId: zone.id, rows };
+    const preview = await request(path, 'administracion', 'POST', input);
+    expect(preview.body.summary).toMatchObject({ creates: 1, updates: 1, skipped: 2 });
+    const applied = await request(path, 'administracion', 'POST', {
+      ...input,
+      revision: preview.body.revision,
+    });
+    expect(applied.status, JSON.stringify(applied.body)).toBe(200);
+    expect((await request('/api/v1/clients/' + existing.id)).body).toMatchObject({
+      code: existing.code,
+      name: 'Cliente actualizado',
+      zoneId: zone.id,
+      sellerId: users.vendedor.id,
+      phone: '04240000000',
+      active: true,
+    });
+    expect(
+      await db.prepare("SELECT zone_id,seller_id FROM clients WHERE code='XL-B'").first(),
+    ).toEqual({ zone_id: zone.id, seller_id: null });
+    expect(await db.prepare("SELECT count(*) n FROM clients WHERE code='XL-D'").first()).toEqual({
+      n: 0,
+    });
+    const again = await request(path, 'administracion', 'POST', input);
+    expect(again.body.summary).toMatchObject({ creates: 0, updates: 0, unchanged: 2 });
+  });
+
+  it('importa clientes sin descripción conservando el nombre de las fichas existentes', async () => {
+    const zone = (
+      await request('/api/v1/zones', 'administracion', 'POST', { name: 'Zona descripción vacía' })
+    ).body;
+    const existing = (
+      await request('/api/v1/clients', 'administracion', 'POST', {
+        name: 'Cliente con nombre registrado',
+        zoneId: zone.id,
+        recurrenceStart: '2026-11-02',
+      })
+    ).body;
+    const fields = { rif: '', phone: '', address: 'Dirección de prueba', active: true };
+    const input = {
+      kind: 'clients',
+      zoneId: zone.id,
+      rows: [
+        { ...fields, line: 4, code: existing.code, name: '  ' },
+        { ...fields, line: 5, code: 'XL-SIN-DESC', name: '' },
+        { ...fields, line: 6, code: 'XL-OMITE-DESC' },
+      ],
+    };
+    const preview = await request(path, 'administracion', 'POST', input);
+    expect(preview.status).toBe(200);
+    expect(preview.body.summary).toMatchObject({ creates: 2, updates: 1 });
+    const applied = await request(path, 'administracion', 'POST', {
+      ...input,
+      revision: preview.body.revision,
+    });
+    expect(applied.status, JSON.stringify(applied.body)).toBe(200);
+    expect((await request('/api/v1/clients/' + existing.id)).body).toMatchObject({
+      name: 'Cliente con nombre registrado',
+      address: fields.address,
+    });
+    expect(
+      (
+        await db
+          .prepare("SELECT name FROM clients WHERE code IN ('XL-SIN-DESC','XL-OMITE-DESC')")
+          .all()
+      ).results,
+    ).toEqual([{ name: '' }, { name: '' }]);
+  });
+
+  it('asigna altas por dirección, registra la zona revisada y rechaza asignaciones manipuladas', async () => {
+    const zoneName = 'Zona Jev de prueba';
+    const zone = (await request('/api/v1/zones', 'administracion', 'POST', { name: zoneName }))
+      .body;
+    const fallback = await db
+      .prepare("SELECT id FROM zones WHERE name_key='sin clasificar'")
+      .first<{ id: string }>();
+    await request('/api/v1/zones', 'administracion', 'POST', {
+      name: 'Zona Jev inactiva',
+      active: false,
+    });
+    const fields = { name: '', rif: '', phone: '04240000000', active: true };
+    const input = {
+      kind: 'clients',
+      classifyZones: true,
+      rows: [
+        {
+          ...fields,
+          line: 1,
+          code: 'JEV-MATCH',
+          address: 'Dirección ficticia en Zona Jev de prueba',
+        },
+        { ...fields, line: 2, code: 'JEV-UNCERTAIN', address: 'Dirección ambigua' },
+        { ...fields, line: 3, code: 'JEV-BLANK', address: '' },
+      ],
+    };
+    const provider = vi.fn((init?: RequestInit) => {
+      expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer test-jev-key');
+      expect(init?.redirect).toBe('manual');
+      const payload = JSON.parse(String(init?.body));
+      const available: [string, string][] = Object.entries(payload.state.zonas);
+      expect(available.map(([, name]) => name)).not.toContain('Zona Jev inactiva');
+      expect(available.map(([, name]) => name)).not.toContain('Sin clasificar');
+      expect(Object.values(payload.state.direcciones)).toEqual(
+        input.rows.slice(0, 2).map((r) => r.address),
+      );
+      expect(init?.body).not.toContain(fields.phone);
+      const choice = available.find(([, name]) => name.startsWith(zoneName))![0];
+      const answer = (confidence: number) => ({
+        type: 'choice',
+        choice,
+        confidence,
+        probabilities: { [choice]: confidence, sin_clasificar: 1 - confidence },
+      });
+      return Response.json({
+        answers: { direccion_1: answer(0.98), direccion_2: answer(0.55) },
+      });
+    });
+    const originalFetch = globalThis.fetch;
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async (resource, init) =>
+        resource === 'https://api.typesafe.ai/v1/systemone'
+          ? provider(init)
+          : originalFetch(resource, init),
+      );
+    env.TYPESAFE_API_KEY = 'test-jev-key';
+    try {
+      expect((await request(path, 'vendedor', 'POST', input)).status).toBe(403);
+      const preview = await request(path, 'administracion', 'POST', input);
+      expect(preview.status, JSON.stringify(preview.body)).toBe(200);
+      expect(preview.body.zoneAssignments).toEqual([
+        ['JEV-MATCH', zone.id],
+        ['JEV-UNCERTAIN', fallback?.id],
+        ['JEV-BLANK', fallback?.id],
+      ]);
+      expect(preview.body.decisions.map((d: { note: string }) => d.note)).toEqual([
+        'Zona: ' + zoneName,
+        'Zona: Sin clasificar',
+        'Zona: Sin clasificar',
+      ]);
+      const review = {
+        ...input,
+        revision: preview.body.revision,
+        zoneAssignments: preview.body.zoneAssignments,
+      };
+      const tampered = await request(path, 'administracion', 'POST', {
+        ...review,
+        zoneAssignments: input.rows.map((r) => [r.code, fallback?.id]),
+      });
+      expect(tampered.status).toBe(409);
+      expect(
+        (
+          await request('/api/v1/zones/' + zone.id, 'administracion', 'PATCH', {
+            name: zoneName + ' renombrada',
+          })
+        ).status,
+      ).toBe(200);
+      expect((await request(path, 'administracion', 'POST', review)).status).toBe(409);
+      expect(provider).toHaveBeenCalledTimes(1);
+      const refreshed = await request(path, 'administracion', 'POST', input);
+      const applied = await request(path, 'administracion', 'POST', {
+        ...input,
+        revision: refreshed.body.revision,
+        zoneAssignments: refreshed.body.zoneAssignments,
+      });
+      expect(applied.status, JSON.stringify(applied.body)).toBe(200);
+      expect(provider).toHaveBeenCalledTimes(2);
+      const records = await db
+        .prepare("SELECT code,zone_id FROM clients WHERE code LIKE 'JEV-%' ORDER BY code")
+        .all();
+      expect(records.results).toEqual([
+        { code: 'JEV-BLANK', zone_id: fallback?.id },
+        { code: 'JEV-MATCH', zone_id: zone.id },
+        { code: 'JEV-UNCERTAIN', zone_id: fallback?.id },
+      ]);
+    } finally {
+      delete env.TYPESAFE_API_KEY;
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('ofrece la zona predeterminada cuando falta la clave de Jev', async () => {
+    const zone = await db
+      .prepare(
+        "SELECT id FROM zones WHERE name_key='sin clasificar' AND active=1 AND deleted_at IS NULL",
+      )
+      .first<{ id: string }>();
+    expect(zone?.id).toBeTruthy();
+    const input = {
+      kind: 'clients',
+      classifyZones: true,
+      rows: [{ line: 1, code: 'JEV-NO-KEY', rif: '', phone: '', address: 'Centro', active: true }],
+    };
+    const preview = await request(path, 'administracion', 'POST', input);
+    expect(preview.body.zoneWarning).toContain('Falta configurar Jev');
+    expect(preview.body.zoneAssignments).toEqual([['JEV-NO-KEY', zone?.id]]);
+    expect(
+      (
+        await request('/api/v1/zones/' + zone?.id, 'administracion', 'PATCH', {
+          name: 'Otro nombre',
+        })
+      ).status,
+    ).toBe(409);
+    expect((await request('/api/v1/zones/' + zone?.id, 'administracion', 'DELETE')).status).toBe(
+      409,
+    );
+  });
+
+  it('rechaza una vista previa obsoleta sin crear los demás registros', async () => {
+    const input = {
+      kind: 'prices',
+      currency: 'USD',
+      rows: [
+        { line: 1, code: 'XL-STALE', name: 'Registro original', price: '1.99' },
+        { line: 2, code: 'XL-ATOMIC', name: 'Registro que no debe crearse', price: '2.99' },
+      ],
+    };
+    const preview = await request(path, 'administracion', 'POST', input);
+    await request('/api/v1/products', 'administracion', 'POST', {
+      sku: 'XL-STALE',
+      name: 'Alta manual',
+      priceUsd: '3.00',
+    });
+    const applied = await request(path, 'administracion', 'POST', {
+      ...input,
+      revision: preview.body.revision,
+    });
+    expect(applied.status).toBe(409);
+    expect(await db.prepare("SELECT id FROM products WHERE sku='XL-ATOMIC'").first()).toBeNull();
   });
 });

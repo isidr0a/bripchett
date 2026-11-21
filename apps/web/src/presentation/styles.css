@@ -329,6 +329,11 @@ hr {
 .search-label {
   width: min(420px, 100%);
 }
+.client-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
 .actions {
   display: flex;
   gap: 12px;
@@ -573,6 +578,7 @@ tbody tr:last-child td {
 .client-result {
   width: 100%;
   display: flex;
+  flex: 0 0 auto;
   align-items: flex-start;
   flex-direction: column;
   gap: 4px;
@@ -580,6 +586,10 @@ tbody tr:last-child td {
   padding: 14px;
   border-radius: 12px;
   font-weight: 400;
+}
+.client-result > * {
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .client-result strong {
   font-size: 15px;

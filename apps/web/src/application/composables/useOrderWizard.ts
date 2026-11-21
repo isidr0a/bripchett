@@ -105,6 +105,19 @@ export function useOrderWizard(
   }
   async function review() {
     error.value = '';
+    const quantities = Object.values(draft.quantities);
+    if (
+      quantities.some(
+        (value) => !Number.isInteger(Number(value)) || Number(value) < 0 || Number(value) > 100000,
+      )
+    ) {
+      error.value = 'Las cantidades deben ser números enteros entre 0 y 100.000.';
+      return;
+    }
+    if (quantities.filter((value) => Number(value) > 0).length > 100) {
+      error.value = 'Puedes incluir hasta 100 productos diferentes en un pedido.';
+      return;
+    }
     busy.value = true;
     try {
       const items = Object.entries(draft.quantities)

@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch, onMounted } from 'vue';
 import {
   allVisitDays,
   clientSchema,
+  completionSchema,
   sellerClientSchema,
   visitDaysSchema,
   type ZoneImpact,
@@ -166,14 +167,17 @@ export function useClientForm(
       return;
     }
     const input = props.completion
-      ? null
+      ? completionSchema.safeParse(details)
       : sellerIntake.value
         ? sellerClientSchema.safeParse({ ...details, zoneId: form.zoneId })
         : clientSchema.safeParse({ ...form, zoneImpactRevision: undefined });
     if (input && !input.success) {
-      error.value = !form.zoneId
-        ? 'Selecciona una zona activa.'
-        : input.error.issues.map((issue) => issue.message).join(' ');
+      error.value =
+        !props.completion && !form.zoneId
+          ? 'Selecciona una zona activa.'
+          : input.error.issues.some((issue) => issue.path[0] === 'name')
+            ? 'El nombre del negocio debe tener entre 2 y 150 caracteres.'
+            : 'Revisa los datos del cliente y su planificación de visitas.';
       return;
     }
     if (review.value && !reviewed.value) return;
@@ -198,7 +202,7 @@ export function useClientForm(
         {
           method: props.client ? 'PATCH' : 'POST',
           body: props.completion
-            ? details
+            ? input?.data
             : { ...input?.data, ...(revision ? { zoneImpactRevision: revision } : {}) },
         },
       );

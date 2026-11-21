@@ -1,5 +1,5 @@
 import { ref, reactive } from 'vue';
-import { type Product } from '@briochett/contracts';
+import { productSchema, type Product } from '@briochett/contracts';
 import { useAuth } from '../stores/auth';
 import { api } from '../../infrastructure/http/api-client';
 import { errorMessage } from '../../shared/formatters';
@@ -30,6 +30,19 @@ export function useProducts() {
   }
   async function save() {
     if (saving.value) return;
+    if (!pendingId.value) {
+      const parsed = productSchema.safeParse({ ...form, priceUsd: String(form.priceUsd) });
+      if (!parsed.success) {
+        const field = parsed.error.issues[0]?.path[0];
+        formError.value =
+          field === 'name'
+            ? 'El nombre debe tener entre 2 y 150 caracteres.'
+            : field === 'sku'
+              ? 'Introduce un código de producto de hasta 40 caracteres.'
+              : 'Introduce un precio mayor que cero, con hasta 2 decimales.';
+        return;
+      }
+    }
     saving.value = true;
     formError.value = '';
     try {

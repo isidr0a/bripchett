@@ -32,7 +32,7 @@ type ItemRow = Omit<QuoteLine, 'unitPrice' | 'subtotal'> & {
   subtotal_minor: number;
 };
 const orderSelect =
-  'SELECT o.*,c.name clientName,u.name authorName FROM orders o JOIN clients c ON c.id=o.client_id JOIN user u ON u.id=o.author_id';
+  "SELECT o.*,coalesce(nullif(c.name,''),c.code) clientName,u.name authorName FROM orders o JOIN clients c ON c.id=o.client_id JOIN user u ON u.id=o.author_id";
 function mapOrder(r: OrderRow): Order {
   return {
     id: r.id,
@@ -198,7 +198,7 @@ export class D1OrderRepository extends D1Repository implements OrderRepository {
   async listCommands({ page, pageSize, offset }: Pagination) {
     const rows = await this.db
       .prepare(
-        "SELECT k.id,k.order_id orderId,k.status,k.created_at createdAt,o.number,c.name clientName,o.notes FROM commands k JOIN orders o ON o.id=k.order_id JOIN clients c ON c.id=o.client_id WHERE o.status<>'anulado' AND o.deleted_at IS NULL ORDER BY k.created_at DESC LIMIT ? OFFSET ?",
+        "SELECT k.id,k.order_id orderId,k.status,k.created_at createdAt,o.number,coalesce(nullif(c.name,''),c.code) clientName,o.notes FROM commands k JOIN orders o ON o.id=k.order_id JOIN clients c ON c.id=o.client_id WHERE o.status<>'anulado' AND o.deleted_at IS NULL ORDER BY k.created_at DESC LIMIT ? OFFSET ?",
       )
       .bind(pageSize, offset)
       .all<Omit<Command, 'items'>>();

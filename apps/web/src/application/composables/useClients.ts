@@ -9,11 +9,19 @@ export function useClients() {
   const auth = useAuth(),
     router = useRouter(),
     q = ref(''),
+    zoneId = ref(''),
+    sellerId = ref(''),
     search = debounceRef(q),
     { data, page, busy, error, load } = useList<Client>(
-      () => '/clients?q=' + encodeURIComponent(search.value),
+      () =>
+        '/clients?q=' +
+        encodeURIComponent(search.value) +
+        '&zoneId=' +
+        encodeURIComponent(zoneId.value) +
+        '&sellerId=' +
+        encodeURIComponent(sellerId.value),
     );
-  watch(search, () => (page.value = 1));
+  watch([search, zoneId, sellerId], () => (page.value = 1));
   const selected = ref<Client | null>(null),
     mode = ref<'detail' | 'edit' | 'new' | 'complete' | null>(null),
     saving = ref(false),
@@ -36,6 +44,8 @@ export function useClients() {
     auth,
     router,
     q,
+    zoneId,
+    sellerId,
     search,
     data,
     page,

@@ -10,20 +10,25 @@ import { D1Repository, count } from './d1-repository';
 const resources = {
   zones: { table: 'zones', label: 't.name', context: 'NULL', entity: 'zona' },
   users: { table: 'user', label: 't.name', context: 't.username', entity: 'usuario' },
-  clients: { table: 'clients', label: 't.name', context: 't.code', entity: 'cliente' },
+  clients: {
+    table: 'clients',
+    label: "coalesce(nullif(t.name,''),t.code)",
+    context: "CASE WHEN t.name<>'' THEN t.code END",
+    entity: 'cliente',
+  },
   products: { table: 'products', label: 't.name', context: 't.sku', entity: 'producto' },
   rates: { table: 'exchange_rates', label: 't.currency', context: 't.rate', entity: 'tasa' },
   routes: { table: 'routes', label: 't.name', context: 't.date', entity: 'ruta' },
   visits: {
     table: 'visits',
-    label: '(SELECT name FROM clients WHERE id=t.client_id)',
+    label: "(SELECT coalesce(nullif(name,''),code) FROM clients WHERE id=t.client_id)",
     context: 't.scheduled_at',
     entity: 'visita',
   },
   orders: {
     table: 'orders',
     label: "'Pedido #' || t.number",
-    context: '(SELECT name FROM clients WHERE id=t.client_id)',
+    context: "(SELECT coalesce(nullif(name,''),code) FROM clients WHERE id=t.client_id)",
     entity: 'pedido',
   },
 } as const;

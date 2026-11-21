@@ -1,5 +1,5 @@
 import { ref, reactive } from 'vue';
-import { type SessionUser } from '@briochett/contracts';
+import { userSchema, userUpdateSchema, type SessionUser } from '@briochett/contracts';
 import { api } from '../../infrastructure/http/api-client';
 import { errorMessage } from '../../shared/formatters';
 import { useList } from './use-list';
@@ -45,6 +45,22 @@ export function useUsers() {
   }
   async function save() {
     if (saving.value) return;
+    if (!pendingId.value) {
+      const parsed = selected.value ? userUpdateSchema.safeParse(form) : userSchema.safeParse(form);
+      if (!parsed.success) {
+        const field = parsed.error.issues[0]?.path[0];
+        const messages: Record<string, string> = {
+          name: 'El nombre debe tener entre 2 y 100 caracteres.',
+          email: 'Introduce un correo electrónico válido.',
+          username:
+            'El usuario debe tener entre 3 y 40 caracteres y usar solo letras, números, punto, guion o guion bajo.',
+          password: 'La contraseña debe tener entre 10 y 128 caracteres.',
+          role: 'Selecciona un rol válido.',
+        };
+        formError.value = messages[String(field)] ?? 'Revisa los datos del usuario.';
+        return;
+      }
+    }
     saving.value = true;
     formError.value = '';
     try {

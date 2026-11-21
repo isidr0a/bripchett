@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { unclassifiedZoneKey } from '@briochett/contracts';
 import AppModal from '../components/AppModal.vue';
 import AppPagination from '../components/AppPagination.vue';
 import DeleteRecord from '../components/DeleteRecord.vue';
@@ -53,8 +54,13 @@ const {
               }}</span>
             </td>
             <td>
-              <button class="secondary compact" @click="start(zone)">Editar</button>
-              <DeleteRecord :id="zone.id" type="zones" :label="zone.name" @deleted="load" />
+              <span v-if="zone.name.toLowerCase() === unclassifiedZoneKey" class="muted small">
+                Zona predeterminada
+              </span>
+              <template v-else>
+                <button class="secondary compact" @click="start(zone)">Editar</button>
+                <DeleteRecord :id="zone.id" type="zones" :label="zone.name" @deleted="load" />
+              </template>
             </td>
           </tr>
         </tbody>

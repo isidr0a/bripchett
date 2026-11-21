@@ -1,0 +1,3 @@
+INSERT INTO zones(id,name,name_key,active,created_at,updated_at) VALUES(lower(hex(randomblob(16))),'Sin clasificar','sin clasificar',1,strftime('%Y-%m-%dT%H:%M:%fZ','now'),strftime('%Y-%m-%dT%H:%M:%fZ','now')) ON CONFLICT(name_key) DO UPDATE SET name=excluded.name,active=1,deleted_at=NULL,deleted_by=NULL,updated_at=excluded.updated_at;
+
+CREATE TRIGGER default_zone_guard BEFORE UPDATE OF name,name_key,active,deleted_at ON zones WHEN old.name_key='sin clasificar' AND (new.name<>old.name OR new.name_key<>old.name_key OR new.active<>1 OR new.deleted_at IS NOT NULL) BEGIN SELECT RAISE(ABORT,'ZONE_DEFAULT'); END;

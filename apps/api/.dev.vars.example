@@ -4,3 +4,5 @@ ENVIRONMENT=development
 # Set a different, random value locally and in Cloudflare secrets.
 BETTER_AUTH_SECRET=
 BOOTSTRAP_TOKEN=
+# Optional TypeSafe API key for Jev zone classification. Set it in .dev.vars.
+TYPESAFE_API_KEY=

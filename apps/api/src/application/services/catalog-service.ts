@@ -52,7 +52,7 @@ export class CatalogService {
     const search = tokens.map((t) => '"' + t.replaceAll('"', '""') + '"*').join(' AND ');
     return this.repository.listClients({
       ...pagination,
-      active,
+      active: active || this.actor.role === 'vendedor',
       search,
       zoneId: filters.zoneId,
       sellerId: this.actor.role === 'vendedor' ? this.actor.id : filters.sellerId,

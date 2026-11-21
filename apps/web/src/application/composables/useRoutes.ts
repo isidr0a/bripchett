@@ -116,7 +116,7 @@ export function useRoutes() {
       error.value = 'Este cliente ya está en la ruta.';
       return;
     }
-    form.stops.push({ clientId: c.id, clientName: c.name, time: '09:00' });
+    form.stops.push({ clientId: c.id, clientName: c.name || c.code, time: '09:00' });
     selecting.value = false;
     error.value = '';
   }
@@ -135,7 +135,16 @@ export function useRoutes() {
       stops: form.stops.map((s) => ({ clientId: s.clientId, time: s.time })),
     });
     if (!input.success) {
-      error.value = input.error.issues.map((issue) => issue.message).join(' ');
+      const issue = input.error.issues[0];
+      const messages: Record<string, string> = {
+        name: 'El nombre de la ruta debe tener entre 2 y 100 caracteres.',
+        sellerId: 'Selecciona un vendedor.',
+        zoneId: 'Selecciona una zona activa.',
+        date: 'Selecciona una fecha válida.',
+        recurrence: 'Selecciona una fecha de finalización válida para la repetición.',
+        stops: 'Agrega entre 1 y 100 clientes y revisa sus horarios.',
+      };
+      error.value = messages[String(issue?.path[0])] ?? issue?.message ?? 'Revisa la ruta.';
       return;
     }
     busy.value = true;

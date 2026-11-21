@@ -1,5 +1,7 @@
 import type {
   AuditEntry,
+  CatalogImportKind,
+  CatalogImportSummary,
   Client,
   ClientInput,
   Command,
@@ -197,4 +199,56 @@ export interface ZoneRepository {
   list(pagination: Pagination, active: boolean, search: string): Promise<Page<Zone>>;
   find(id: string): Promise<Zone | null>;
   save(id: string, data: ZoneInput, key: string, at: string, editing: boolean): Promise<boolean>;
+}
+
+export type CatalogImportKey = { code: string; rif?: string };
+export type CatalogImportRecord = {
+  id: string;
+  code: string;
+  importCode: string | null;
+  name: string;
+  rif: string;
+  phone: string;
+  address: string;
+  priceUsd: string;
+  updatedAt: string;
+  deletedAt: string | null;
+};
+export type CatalogImportChange = {
+  id: string;
+  previousId: string | null;
+  previousAt: string | null;
+  code: string;
+  name: string;
+  rif?: string;
+  matchRif?: string;
+  phone?: string;
+  address?: string;
+  active?: boolean;
+  priceUsd?: string;
+  zoneId?: string;
+  zoneName?: string;
+};
+export type ImportZone = Pick<Zone, 'id' | 'name'>;
+export interface ImportZoneClassifier {
+  classify(
+    addresses: string[],
+    zones: ImportZone[],
+  ): Promise<{ matches: Map<string, string>; warning?: string }>;
+}
+export interface CatalogImportRepository {
+  find(kind: CatalogImportKind, keys: CatalogImportKey[]): Promise<CatalogImportRecord[]>;
+  zone(id: string): Promise<ImportZone | null>;
+  activeZones(): Promise<(ImportZone & { nameKey: string })[]>;
+  latestRate(currency: 'COP' | 'VES'): Promise<{ id: string; rate: string } | null>;
+  apply(input: {
+    kind: CatalogImportKind;
+    changes: CatalogImportChange[];
+    zoneId?: string;
+    rateId?: string;
+    currency?: 'USD' | 'COP' | 'VES';
+    at: string;
+    date: string;
+    summary: CatalogImportSummary;
+  }): Promise<boolean>;
 }

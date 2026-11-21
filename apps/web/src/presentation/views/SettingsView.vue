@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import DeleteRecord from '../components/DeleteRecord.vue';
+import CatalogImportPanel from '../components/CatalogImportPanel.vue';
+
 import PageHeader from '../components/PageHeader.vue';
 import { dateTime } from '../../shared/formatters';
 import { useSettings } from '../../application/composables/useSettings';
 const { rates, currency, rate, busy, error, success, integration, save, load } = useSettings();
 </script>
 <template>
-  <PageHeader title="Configuración" description="Tasas de cambio e integración administrativa" />
+  <PageHeader title="Configuración" description="Tasas de cambio, importación e integración" />
   <p v-if="error" class="notice error" role="alert">{{ error }}</p>
   <p v-if="success" class="notice success" role="status">{{ success }}</p>
   <section class="card stack">
@@ -70,6 +72,7 @@ const { rates, currency, rate, busy, error, success, integration, save, load } =
       </table>
     </div>
   </section>
+  <CatalogImportPanel />
   <section class="card stack">
     <h2>Integración con a2</h2>
     <span class="badge inactive">Integración no configurada</span>
@@ -80,8 +83,8 @@ const { rates, currency, rate, busy, error, success, integration, save, load } =
       }}
     </p>
     <p class="muted">
-      a2 está instalado en un equipo local. La importación y alta de clientes, el envío de pedidos y
-      los estados de cuenta se habilitarán cuando se configure una conexión compatible.
+      a2 está instalado en un equipo local. La sincronización automática de clientes, el envío de
+      pedidos y los estados de cuenta se habilitarán cuando se configure una conexión compatible.
     </p>
     <p class="small muted">Los pedidos se guardan en Briochett. No se han enviado datos a a2.</p>
   </section>

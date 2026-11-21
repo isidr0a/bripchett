@@ -5,6 +5,7 @@ import PageHeader from '../components/PageHeader.vue';
 import AppPagination from '../components/AppPagination.vue';
 import AppModal from '../components/AppModal.vue';
 import ClientForm from '../components/ClientForm.vue';
+import ClientFilters from '../components/ClientFilters.vue';
 import PhotoPreview from '../components/PhotoPreview.vue';
 import RecordPhotoPanel from '../components/RecordPhotoPanel.vue';
 import { photoPath } from '../../application/composables/useRecordPhoto';
@@ -14,6 +15,8 @@ const {
   auth,
   router,
   q,
+  zoneId,
+  sellerId,
   data,
   page,
   busy,
@@ -34,7 +37,7 @@ const {
   <div class="toolbar">
     <label class="search-label"
       >Buscar cliente<input v-model="q" type="search" placeholder="Nombre, código o RIF" /></label
-    ><button
+    ><ClientFilters v-model:zone-id="zoneId" v-model:seller-id="sellerId" /><button
       v-if="auth.canSell"
       @click="
         selected = null;
@@ -80,8 +83,8 @@ const {
                       message = '';
                     "
                   >
-                    {{ c.name }}</button
-                  ><small>{{ c.code }}</small>
+                    {{ c.name || c.code }}</button
+                  ><small v-if="c.name">{{ c.code }}</small>
                 </div>
               </div>
             </td>
@@ -106,7 +109,7 @@ const {
               >
                 Ver ficha
               </button>
-              <DeleteRecord :id="c.id" type="clients" :label="c.name" @deleted="load" />
+              <DeleteRecord :id="c.id" type="clients" :label="c.name || c.code" @deleted="load" />
             </td>
           </tr>
         </tbody>
@@ -124,7 +127,7 @@ const {
           ? 'Completar datos del cliente'
           : mode === 'edit'
             ? 'Editar cliente'
-            : selected?.name || 'Cliente'
+            : selected?.name || selected?.code || 'Cliente'
     "
     :wide="mode !== 'detail'"
     :busy="saving"
@@ -162,7 +165,7 @@ const {
         v-else
         :path="photoPath('clients', selected.id)"
         :photo-id="selected.photoId"
-        :alt="'Foto de ' + selected.name"
+        :alt="'Foto de ' + (selected.name || selected.code)"
       />
       <div class="detail-grid">
         <div>

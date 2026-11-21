@@ -300,7 +300,7 @@ const {
     <template v-else-if="modal === 'schedule'"
       ><ClientSelector v-if="!client" @select="client = $event" />
       <form v-else class="stack" @submit.prevent="saveVisit">
-        <h3>{{ client.name }}</h3>
+        <h3>{{ client.name || client.code }}</h3>
         <p class="muted">{{ client.recurrence }} · Desde {{ client.recurrenceStart }}</p>
         <p v-if="client.visitDays.length" class="small">
           {{ client.visitDays.map((day) => days[day]).join(', ') }} · Cualquier hora
