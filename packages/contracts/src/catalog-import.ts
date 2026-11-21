@@ -81,7 +81,8 @@ export type CatalogImportPreview = {
   revision: string;
   summary: CatalogImportSummary;
   decisions: ImportDecision[];
-  rate?: string;
+  copRate?: string;
+  vesRate?: string;
   zoneAssignments?: ImportZoneAssignments;
   zoneWarning?: string;
 };

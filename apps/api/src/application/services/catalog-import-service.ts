@@ -39,20 +39,21 @@ export class CatalogImportService {
     const zoneId = clients?.zoneId;
     const automatic = clients?.classifyZones === true;
     const currency = input.kind === 'prices' ? input.currency : undefined;
-    const [existing, zone, rate, zones] = await Promise.all([
+    const [existing, zone, copRate, vesRate, zones] = await Promise.all([
       this.repository.find(
         input.kind,
         input.rows.map((row) => ({ code: row.code, rif: 'rif' in row ? row.rif : '' })),
       ),
       zoneId ? this.repository.zone(zoneId) : null,
-      currency && currency !== 'USD' ? this.repository.latestRate(currency) : null,
+      currency && currency !== 'COP' ? this.repository.latestRate('COP') : null,
+      currency === 'VES' ? this.repository.latestRate('VES') : null,
       automatic ? this.repository.activeZones() : [],
     ]);
     if (zoneId && !zone) fail(422, 'IMPORT_ZONE', 'Selecciona una zona comercial activa.');
     const fallback = zones.find((item) => item.nameKey === unclassifiedZoneKey);
     if (automatic && !fallback)
       fail(409, 'IMPORT_ZONE', 'La zona predeterminada Sin clasificar no está disponible.');
-    if (currency && currency !== 'USD' && !rate)
+    if (currency && currency !== 'COP' && (!copRate || (currency === 'VES' && !vesRate)))
       fail(422, 'IMPORT_RATE', 'Registra una tasa vigente para la moneda seleccionada.');
     const byCode = new Map<string, CatalogImportRecord[]>();
     const byRif = new Map<string, CatalogImportRecord[]>();
@@ -117,21 +118,22 @@ export class CatalogImportService {
         name,
       };
       if ('price' in row) {
-        const priceUsd = new Decimal(row.price)
-          .div(rate?.rate ?? 1)
+        const priceCop = new Decimal(row.price)
+          .mul(copRate?.rate ?? 1)
+          .div(vesRate?.rate ?? 1)
           .toFixed(2, Decimal.ROUND_HALF_UP);
-        if (!productSchema.safeParse({ sku: code, name, priceUsd }).success) {
+        if (!productSchema.safeParse({ sku: code, name, priceCop }).success) {
           decision('omitir', 'El precio convertido no está dentro del rango permitido.');
           continue;
         }
-        if (old?.name === name && new Decimal(old.priceUsd).eq(priceUsd)) {
+        if (old?.name === name && new Decimal(old.priceCop).eq(priceCop)) {
           decision('sin_cambios', 'Nombre y precio ya coinciden.');
           continue;
         }
-        pending.push({ ...base, priceUsd });
+        pending.push({ ...base, priceCop });
         decision(
           old ? 'actualizar' : 'crear',
-          old ? `USD ${old.priceUsd} → USD ${priceUsd}` : `USD ${priceUsd}`,
+          old ? `COP ${old.priceCop} → COP ${priceCop}` : `COP ${priceCop}`,
         );
         continue;
       }
@@ -213,7 +215,8 @@ export class CatalogImportService {
         zone,
         zones,
         currency,
-        rate,
+        copRate,
+        vesRate,
         pending,
         decisions,
       ],
@@ -223,7 +226,8 @@ export class CatalogImportService {
       revision,
       decisions,
       summary,
-      ...(rate ? { rate: rate.rate } : {}),
+      ...(copRate ? { copRate: copRate.rate } : {}),
+      ...(vesRate ? { vesRate: vesRate.rate } : {}),
       ...(automatic ? { zoneAssignments } : {}),
       ...(zoneWarning ? { zoneWarning } : {}),
     };
@@ -236,7 +240,10 @@ export class CatalogImportService {
         changes: pending.map((c) => ({ ...c, id: c.previousId ?? uid() })),
         zoneId,
         currency,
-        rateId: rate?.id,
+        rateIds: [
+          ...(copRate ? [{ currency: 'COP' as const, id: copRate.id }] : []),
+          ...(vesRate ? [{ currency: 'VES' as const, id: vesRate.id }] : []),
+        ],
         at: now(),
         date: caracasDate(),
         summary,

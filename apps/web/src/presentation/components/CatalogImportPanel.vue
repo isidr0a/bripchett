@@ -71,15 +71,14 @@ function onFile(event: Event) {
         <label>
           Moneda de Precio 1
           <select v-model="currency" :disabled="busy" @change="invalidate">
-            <option value="" disabled>Selecciona la moneda del archivo</option>
-            <option value="USD">Dólares (USD)</option>
             <option value="COP">Pesos colombianos (COP)</option>
+            <option value="USD">Dólares (USD)</option>
             <option value="VES">Bolívares (VES)</option>
           </select>
         </label>
         <p class="muted small">
-          Se actualizan nombres y precios base por código. Los importes en COP o VES se convierten
-          con la tasa vigente de Configuración. La columna Existencia no se importa.
+          Se actualizan nombres y precios base por código. Los importes en USD o VES se convierten a
+          COP con la tasa vigente de Configuración. La columna Existencia no se importa.
         </p>
       </template>
       <template v-else>
@@ -138,8 +137,10 @@ function onFile(event: Event) {
           {{ preview.summary.creates }} altas · {{ preview.summary.updates }} actualizaciones ·
           {{ preview.summary.skipped }} omitidas · {{ preview.summary.unchanged }} sin cambios.
         </p>
-        <p v-if="preview.rate" class="muted">
-          Tasa de conversión: 1 USD = {{ preview.rate }} {{ currency }}.
+        <p v-if="preview.copRate" class="muted">
+          Tasas: 1 USD = {{ preview.copRate }} COP<span v-if="preview.vesRate">
+            y {{ preview.vesRate }} VES</span
+          >.
         </p>
         <p v-if="preview.zoneWarning" class="notice" role="status">{{ preview.zoneWarning }}</p>
         <p v-if="dirty" class="notice" role="status">

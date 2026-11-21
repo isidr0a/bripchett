@@ -41,7 +41,7 @@ type ProductRow = Omit<Product, 'active'> & { active: number };
 const clientSelect =
   'SELECT c.*,u.name sellerName FROM clients c LEFT JOIN user u ON u.id=c.seller_id';
 const productSelect =
-  'SELECT id,sku,name,price_usd priceUsd,active,updated_at updatedAt,photo_id photoId FROM products';
+  'SELECT id,sku,name,price_cop priceCop,active,updated_at updatedAt,photo_id photoId FROM products';
 
 function mapClient(row: ClientRow): Client {
   return {
@@ -264,9 +264,9 @@ export class D1CatalogRepository extends D1Repository implements CatalogReposito
     await this.db.batch([
       this.db
         .prepare(
-          'INSERT INTO products(id,sku,name,price_usd,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',
+          "INSERT INTO products(id,sku,name,price_usd,price_cop,active,created_at,updated_at) VALUES(?,?,?,'0',?,?,?,?)",
         )
-        .bind(id, d.sku, d.name, d.priceUsd, +d.active, at, at),
+        .bind(id, d.sku, d.name, d.priceCop, +d.active, at, at),
       this.audit('crear', 'producto', id),
     ]);
   }
@@ -274,9 +274,9 @@ export class D1CatalogRepository extends D1Repository implements CatalogReposito
     const [result] = await this.db.batch([
       this.db
         .prepare(
-          'UPDATE products SET sku=?,name=?,price_usd=?,active=?,updated_at=? WHERE id=? AND deleted_at IS NULL',
+          'UPDATE products SET sku=?,name=?,price_cop=?,active=?,updated_at=? WHERE id=? AND deleted_at IS NULL',
         )
-        .bind(d.sku, d.name, d.priceUsd, +d.active, at, id),
+        .bind(d.sku, d.name, d.priceCop, +d.active, at, id),
       this.auditIfChanged('actualizar', 'producto', id),
     ]);
     return !!result.meta.changes;

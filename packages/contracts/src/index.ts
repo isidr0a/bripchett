@@ -117,9 +117,9 @@ const decimalString = z
 export const productSchema = z.object({
   name: z.string().trim().min(2).max(150),
   sku: z.string().trim().min(1).max(40),
-  priceUsd: z
+  priceCop: z
     .string()
-    .regex(/^\d{1,7}(\.\d{1,2})?$/)
+    .regex(/^\d{1,10}(\.\d{1,2})?$/)
     .refine((v) => Number(v) > 0),
   active: z.boolean().default(true),
 });
@@ -187,7 +187,8 @@ export type QuoteLine = {
   name: string;
   sku: string;
   quantity: number;
-  priceUsd: string;
+  priceUsd: string | null;
+  priceCop: string | null;
   unitPrice: string;
   subtotal: string;
 };
@@ -195,10 +196,12 @@ export type Quote = {
   clientId: string;
   currency: Currency;
   rate: string;
+  rateBase: 'COP';
   rateId: string | null;
+  copRateId: string | null;
   items: QuoteLine[];
   total: string;
-  totalUsd: string;
+  totalUsd: string | null;
   units: number;
   version: string;
 };
@@ -211,8 +214,9 @@ export type Order = {
   authorName: string;
   currency: Currency;
   rate: string;
+  rateBase: 'USD' | 'COP';
   total: string;
-  totalUsd: string;
+  totalUsd: string | null;
   status: (typeof orderStatuses)[number];
   createdAt: string;
   notes: string;
@@ -335,7 +339,7 @@ export type Report = Omit<ReportInput, 'sellerId'> & {
   totals: { currency: Currency; orders: number; total: string }[];
   states: { status: Order['status']; total: number }[];
   visits: { status: Visit['status']; total: number }[];
-  totalUsd: string;
+  totalUsd: string | null;
   generatedAt: string;
 };
 export type AuditEntry = {
@@ -364,7 +368,7 @@ export const moduleAccess: Record<Role, string[]> = {
   preparacion: ['comandas'],
   supervision: ['dashboard', 'pedidos', 'comandas', 'rutas', 'clientes', 'reportes'],
 };
-export function money(value: string | number, currency: Currency = 'USD') {
+export function money(value: string | number, currency: Currency = 'COP') {
   return new Intl.NumberFormat('es-VE', {
     style: 'currency',
     currency,

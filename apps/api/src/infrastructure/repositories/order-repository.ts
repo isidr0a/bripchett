@@ -19,8 +19,10 @@ type OrderRow = {
   authorName: string;
   currency: Order['currency'];
   rate: string;
+  rate_base: 'USD' | 'COP';
   total_minor: number;
   total_usd_minor: number;
+  usd_available: number;
   status: Order['status'];
   created_at: string;
   notes: string;
@@ -43,8 +45,9 @@ function mapOrder(r: OrderRow): Order {
     authorName: r.authorName,
     currency: r.currency,
     rate: r.rate,
+    rateBase: r.rate_base,
     total: major(r.total_minor),
-    totalUsd: major(r.total_usd_minor),
+    totalUsd: r.usd_available ? major(r.total_usd_minor) : null,
     status: r.status,
     createdAt: r.created_at,
     notes: r.notes,
@@ -77,7 +80,7 @@ export class D1OrderRepository extends D1Repository implements OrderRepository {
     if (!row) return null;
     const items = await this.db
       .prepare(
-        'SELECT product_id productId,name,sku,quantity,price_usd priceUsd,unit_minor,subtotal_minor FROM order_items WHERE order_id=? ORDER BY rowid',
+        'SELECT product_id productId,name,sku,quantity,CASE WHEN o.usd_available=1 THEN i.price_usd END priceUsd,i.price_cop priceCop,i.unit_minor,i.subtotal_minor FROM order_items i JOIN orders o ON o.id=i.order_id WHERE i.order_id=? ORDER BY i.rowid',
       )
       .bind(id)
       .all<ItemRow>();
@@ -90,6 +93,7 @@ export class D1OrderRepository extends D1Repository implements OrderRepository {
         sku: i.sku,
         quantity: i.quantity,
         priceUsd: i.priceUsd,
+        priceCop: i.priceCop,
         unitPrice: major(i.unit_minor),
         subtotal: major(i.subtotal_minor),
       })),
@@ -117,7 +121,7 @@ export class D1OrderRepository extends D1Repository implements OrderRepository {
     const statements = [
       this.db
         .prepare(
-          'INSERT INTO orders(id,client_id,author_id,currency,rate,rate_id,total_minor,total_usd_minor,units,notes,client_snapshot,idempotency_key,request_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+          'INSERT INTO orders(id,client_id,author_id,currency,rate,rate_base,rate_id,cop_rate_id,usd_available,total_minor,total_usd_minor,units,notes,client_snapshot,idempotency_key,request_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
         )
         .bind(
           id,
@@ -125,9 +129,12 @@ export class D1OrderRepository extends D1Repository implements OrderRepository {
           authorId,
           q.currency,
           q.rate,
+          q.rateBase,
           q.rateId,
+          q.copRateId,
+          Number(q.totalUsd !== null),
           minor(q.total),
-          minor(q.totalUsd),
+          minor(q.totalUsd ?? '0'),
           q.units,
           d.notes,
           JSON.stringify(clientSnapshot),
@@ -139,7 +146,7 @@ export class D1OrderRepository extends D1Repository implements OrderRepository {
       ...q.items.map((i) =>
         this.db
           .prepare(
-            'INSERT INTO order_items(id,order_id,product_id,name,sku,quantity,price_usd,unit_minor,subtotal_minor) VALUES(?,?,?,?,?,?,?,?,?)',
+            'INSERT INTO order_items(id,order_id,product_id,name,sku,quantity,price_usd,price_cop,unit_minor,subtotal_minor) VALUES(?,?,?,?,?,?,?,?,?,?)',
           )
           .bind(
             uid(),
@@ -148,7 +155,8 @@ export class D1OrderRepository extends D1Repository implements OrderRepository {
             i.name,
             i.sku,
             i.quantity,
-            i.priceUsd,
+            i.priceUsd ?? '0',
+            i.priceCop,
             minor(i.unitPrice),
             minor(i.subtotal),
           ),

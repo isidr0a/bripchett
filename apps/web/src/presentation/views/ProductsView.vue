@@ -28,7 +28,7 @@ const {
 } = useProducts();
 </script>
 <template>
-  <PageHeader title="Productos" description="Catálogo y precios base en dólares" />
+  <PageHeader title="Productos" description="Catálogo y precios base en pesos colombianos" />
   <div class="toolbar">
     <button v-if="auth.isAdmin" @click="edit(null)">+ Nuevo producto</button>
   </div>
@@ -41,7 +41,7 @@ const {
           <tr>
             <th>Producto</th>
             <th>Código</th>
-            <th>Precio USD</th>
+            <th>Precio COP</th>
             <th>Estado</th>
             <th v-if="auth.isAdmin">Acciones</th>
           </tr>
@@ -61,7 +61,7 @@ const {
               </div>
             </td>
             <td>{{ p.sku }}</td>
-            <td>{{ money(p.priceUsd, 'USD') }}</td>
+            <td>{{ money(p.priceCop, 'COP') }}</td>
             <td>{{ p.active ? 'Activo' : 'Inactivo' }}</td>
             <td v-if="auth.isAdmin">
               <button class="secondary compact" @click="edit(p)">Editar</button>
@@ -84,8 +84,8 @@ const {
         <label>Nombre<input v-model="form.name" required maxlength="150" /></label
         ><label>Código de producto<input v-model="form.sku" required maxlength="40" /></label
         ><label
-          >Precio base USD<input
-            v-model="form.priceUsd"
+          >Precio base COP<input
+            v-model="form.priceCop"
             type="number"
             min="0.01"
             max="9999999.99"

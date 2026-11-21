@@ -14,7 +14,7 @@ export function useProducts() {
     selected = ref<Product | null>(null),
     saving = ref(false),
     formError = ref(''),
-    form = reactive({ name: '', sku: '', priceUsd: '', active: true });
+    form = reactive({ name: '', sku: '', priceCop: '', active: true });
   function edit(p: Product | null) {
     photo.reset(p?.photoId);
     pendingId.value = '';
@@ -22,8 +22,8 @@ export function useProducts() {
     Object.assign(
       form,
       p
-        ? { name: p.name, sku: p.sku, priceUsd: p.priceUsd, active: p.active }
-        : { name: '', sku: '', priceUsd: '', active: true },
+        ? { name: p.name, sku: p.sku, priceCop: p.priceCop, active: p.active }
+        : { name: '', sku: '', priceCop: '', active: true },
     );
     formError.value = '';
     open.value = true;
@@ -31,7 +31,7 @@ export function useProducts() {
   async function save() {
     if (saving.value) return;
     if (!pendingId.value) {
-      const parsed = productSchema.safeParse({ ...form, priceUsd: String(form.priceUsd) });
+      const parsed = productSchema.safeParse({ ...form, priceCop: String(form.priceCop) });
       if (!parsed.success) {
         const field = parsed.error.issues[0]?.path[0];
         formError.value =
@@ -51,7 +51,7 @@ export function useProducts() {
           selected.value ? '/products/' + selected.value.id : '/products',
           {
             method: selected.value ? 'PATCH' : 'POST',
-            body: { ...form, priceUsd: String(form.priceUsd) },
+            body: { ...form, priceCop: String(form.priceCop) },
           },
         );
         pendingId.value = saved.id;

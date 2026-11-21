@@ -1,0 +1,18 @@
+CREATE TABLE cop_migration_guard (ok INTEGER NOT NULL CHECK(ok=1));
+INSERT INTO cop_migration_guard SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM products) OR EXISTS(SELECT 1 FROM exchange_rates WHERE currency='COP' AND deleted_at IS NULL) THEN 1 ELSE 0 END;
+INSERT INTO cop_migration_guard SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM products WHERE (CAST(price_usd AS REAL) * CAST((SELECT rate FROM exchange_rates WHERE currency='COP' AND deleted_at IS NULL ORDER BY created_at DESC,id DESC LIMIT 1) AS REAL) > 9999999999.99 OR CAST(price_usd AS REAL) * CAST((SELECT rate FROM exchange_rates WHERE currency='COP' AND deleted_at IS NULL ORDER BY created_at DESC,id DESC LIMIT 1) AS REAL) < 0.005)) THEN 1 ELSE 0 END;
+ALTER TABLE products ADD COLUMN price_cop TEXT;
+CREATE TABLE price_conversion_migration (rate_id TEXT, rate TEXT, applied_at TEXT);
+INSERT INTO price_conversion_migration SELECT id,rate,strftime('%Y-%m-%dT%H:%M:%fZ','now') FROM exchange_rates WHERE currency='COP' AND deleted_at IS NULL ORDER BY created_at DESC,id DESC LIMIT 1;
+UPDATE products SET price_cop=(WITH parts AS (SELECT price_usd AS p, (SELECT rate FROM price_conversion_migration) AS r), integers AS (SELECT CAST(substr(p,1,instr(p||'.','.')-1) || substr(substr(p||'.',instr(p||'.','.')+1)||'00',1,2) AS INTEGER) AS cents, CAST(substr(r,1,instr(r||'.','.')-1) || substr(substr(r||'.',instr(r||'.','.')+1)||'000000',1,6) AS INTEGER) AS micros FROM parts), result AS (SELECT (cents*micros+500000)/1000000 AS amount FROM integers) SELECT printf('%d.%02d',amount/100,amount%100) FROM result);
+DROP TABLE cop_migration_guard;
+ALTER TABLE order_items ADD COLUMN price_cop TEXT;
+ALTER TABLE orders ADD COLUMN rate_base TEXT NOT NULL DEFAULT 'USD' CHECK(rate_base IN ('USD','COP'));
+ALTER TABLE orders ADD COLUMN cop_rate_id TEXT REFERENCES exchange_rates(id);
+ALTER TABLE orders ADD COLUMN usd_available INTEGER NOT NULL DEFAULT 1;
+DROP TRIGGER order_product_guard;
+CREATE TRIGGER order_product_guard BEFORE INSERT ON order_items WHEN new.price_cop IS NULL OR NOT EXISTS(SELECT 1 FROM products WHERE id=new.product_id AND active=1 AND deleted_at IS NULL AND CAST(price_cop AS REAL)=CAST(new.price_cop AS REAL)) BEGIN SELECT RAISE(ABORT,'PRODUCT_CHANGED'); END;
+DROP TRIGGER order_trash_dependencies;
+CREATE TRIGGER order_trash_dependencies BEFORE INSERT ON orders WHEN EXISTS(SELECT 1 FROM clients WHERE id=new.client_id AND deleted_at IS NOT NULL) OR EXISTS(SELECT 1 FROM user WHERE id=new.author_id AND deleted_at IS NOT NULL) OR (new.cop_rate_id IS NOT NULL AND new.cop_rate_id IS NOT (SELECT id FROM exchange_rates WHERE currency='COP' AND deleted_at IS NULL ORDER BY created_at DESC,id DESC LIMIT 1)) OR (new.currency='VES' AND (new.rate_id IS NULL OR new.rate_id IS NOT (SELECT id FROM exchange_rates WHERE currency='VES' AND deleted_at IS NULL ORDER BY created_at DESC,id DESC LIMIT 1))) BEGIN SELECT RAISE(ABORT,'TRASHED_RECORD'); END;
+CREATE TRIGGER product_price_cop_insert BEFORE INSERT ON products WHEN new.price_cop IS NULL OR CAST(new.price_cop AS REAL)<=0 BEGIN SELECT RAISE(ABORT,'PRODUCT_PRICE_COP'); END;
+CREATE TRIGGER product_price_cop_update BEFORE UPDATE OF price_cop ON products WHEN new.price_cop IS NULL OR CAST(new.price_cop AS REAL)<=0 BEGIN SELECT RAISE(ABORT,'PRODUCT_PRICE_COP'); END;

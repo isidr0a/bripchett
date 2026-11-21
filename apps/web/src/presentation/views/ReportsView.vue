@@ -35,12 +35,15 @@ const { from, to, seller, sellers, data, busy, error, generate, download } = use
           ><strong>{{ money(t.total, t.currency as Currency) }}</strong>
         </article>
         <article class="card inset">
-          <small>Consolidado base USD</small><strong>{{ money(data.totalUsd, 'USD') }}</strong>
+          <small>Consolidado base USD</small
+          ><strong>{{
+            data.totalUsd === null ? 'No disponible' : money(data.totalUsd, 'USD')
+          }}</strong>
         </article>
       </div>
       <p class="muted small">
-        Importes sin pedidos anulados. El consolidado usa los precios base en USD conservados en
-        cada pedido.
+        Importes sin pedidos anulados. El consolidado en USD no está disponible si algún pedido no
+        tenía tasa COP al registrarse.
       </p>
     </section>
     <div class="command-grid">

@@ -78,7 +78,10 @@ const { auth, data, page, busy, error, load, creating, detail, working, message,
         <span class="badge" :class="detail.status">{{ statusLabels[detail.status] }}</span>
       </div>
       <p class="muted">{{ detail.authorName }} · {{ dateTime(detail.createdAt) }}</p>
-      <p>Moneda: {{ detail.currency }} · Tasa aplicada: {{ detail.rate }}</p>
+      <p>
+        Moneda: {{ detail.currency }} · Tasa aplicada: 1 {{ detail.rateBase }} = {{ detail.rate }}
+        {{ detail.currency }}
+      </p>
       <div v-for="line in detail.items" :key="line.productId" class="review-line">
         <div>
           <strong>{{ line.name }}</strong

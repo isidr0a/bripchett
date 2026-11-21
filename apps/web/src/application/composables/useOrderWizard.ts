@@ -31,7 +31,7 @@ export function useOrderWizard(
   };
   const blank = (): Draft => ({
       clientId: props.clientId || '',
-      currency: 'USD',
+      currency: 'COP',
       quantities: {},
       notes: '',
       key: crypto.randomUUID(),

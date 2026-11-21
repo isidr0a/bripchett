@@ -114,13 +114,13 @@ for (const [i, name] of ['Burger Point', 'Hot Dog House', 'Fast Grill', 'Urban B
     a.cookie,
   );
 }
-for (const [sku, name, priceUsd] of [
-  ['BRI', 'Pan Brioche Hamburguesa', '0.50'],
-  ['PAP', 'Pan de Papa', '0.55'],
-  ['INT', 'Pan Integral', '0.60'],
-  ['TRA', 'Pan Tradicional', '0.45'],
+for (const [sku, name, priceCop] of [
+  ['BRI', 'Pan Brioche Hamburguesa', '2100.00'],
+  ['PAP', 'Pan de Papa', '2310.00'],
+  ['INT', 'Pan Integral', '2520.00'],
+  ['TRA', 'Pan Tradicional', '1890.00'],
 ])
-  await request('/api/v1/products', { sku, name, priceUsd, active: true }, a.cookie);
+  await request('/api/v1/products', { sku, name, priceCop, active: true }, a.cookie);
 for (const [currency, rate] of [
   ['COP', '4200.00'],
   ['VES', '120.00'],

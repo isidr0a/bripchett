@@ -57,18 +57,18 @@ const {
       </div>
       <label
         >Moneda del pedido<select v-model="draft.currency">
-          <option value="USD">Dólares · USD</option>
           <option value="COP">Pesos colombianos · COP</option>
+          <option value="USD">Dólares · USD</option>
           <option value="VES">Bolívares · VES</option>
         </select></label
       >
       <p class="muted small">
-        Precios base en USD. El resumen aplicará la tasa vigente de la moneda elegida.
+        Precios base en COP. El resumen aplicará la tasa vigente de la moneda elegida.
       </p>
       <div v-for="p in products.items" :key="p.id" class="product-line">
         <div>
           <strong>{{ p.name }}</strong
-          ><small>{{ p.sku }} · {{ money(p.priceUsd, 'USD') }} / unidad</small>
+          ><small>{{ p.sku }} · {{ money(p.priceCop, 'COP') }} / unidad</small>
         </div>
         <div class="quantity">
           <button class="secondary" :aria-label="'Restar ' + p.name" @click="adjust(p.id, -1)">
@@ -108,7 +108,7 @@ const {
     </div>
     <div v-else-if="stage === 'review' && draft.quote" class="stack">
       <h3>{{ client?.name || client?.code || 'Cliente seleccionado' }}</h3>
-      <p>{{ draft.currency }} · Tasa: 1 USD = {{ draft.quote.rate }} {{ draft.currency }}</p>
+      <p>{{ draft.currency }} · Tasa: 1 COP = {{ draft.quote.rate }} {{ draft.currency }}</p>
       <div v-for="line in draft.quote.items" :key="line.productId" class="review-line">
         <div>
           <strong>{{ line.name }}</strong

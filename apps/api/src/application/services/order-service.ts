@@ -45,36 +45,44 @@ export class OrderService {
           { missing, clientId: client.id },
         );
     }
-    let rate = '1',
-      rateId: string | null = null;
-    if (input.currency !== 'USD') {
-      const current = await this.catalogRepository.latestRate(input.currency);
-      if (!current)
-        fail(
-          422,
-          'RATE_MISSING',
-          'Administración debe registrar la tasa de ' + input.currency + ' antes de continuar.',
-        );
-      rate = current.rate;
-      rateId = current.id;
-    }
+    const [copRate, vesRate] = await Promise.all([
+      this.catalogRepository.latestRate('COP'),
+      input.currency === 'VES' ? this.catalogRepository.latestRate('VES') : null,
+    ]);
+    if (input.currency !== 'COP' && (!copRate || (input.currency === 'VES' && !vesRate)))
+      fail(
+        422,
+        'RATE_MISSING',
+        'Administración debe registrar las tasas necesarias antes de continuar.',
+      );
+    const rate =
+      input.currency === 'COP'
+        ? '1'
+        : input.currency === 'USD'
+          ? new Decimal(1).div(copRate!.rate).toString()
+          : new Decimal(vesRate!.rate).div(copRate!.rate).toString();
+    const rateId = input.currency === 'VES' ? vesRate!.id : null;
+    const copRateId = copRate?.id ?? null;
     const products = await this.catalogRepository.findProducts(input.items.map((i) => i.productId));
     const items = input.items.map((item) => {
       const product = products.find((p) => p.id === item.productId && p.active);
       if (!product) fail(422, 'PRODUCT_UNAVAILABLE', 'Uno de los productos ya no está disponible.');
-      return calculateLine(product, item.quantity, rate);
+      return calculateLine(product, item.quantity, rate, copRate?.rate);
     });
     const total = items.reduce((sum, line) => sum.plus(line.subtotal), new Decimal(0)).toFixed(2);
-    const totalUsd = items
-      .reduce(
-        (sum, line) => sum.plus(new Decimal(line.priceUsd).mul(line.quantity)),
-        new Decimal(0),
-      )
-      .toFixed(2);
+    const totalUsd = copRate
+      ? items
+          .reduce(
+            (sum, line) => sum.plus(new Decimal(line.priceCop!).mul(line.quantity)),
+            new Decimal(0),
+          )
+          .div(copRate.rate)
+          .toFixed(2)
+      : null;
     const units = items.reduce((sum, line) => sum + line.quantity, 0);
     if (
       new Decimal(total).mul(100).gt(Number.MAX_SAFE_INTEGER) ||
-      new Decimal(totalUsd).mul(100).gt(Number.MAX_SAFE_INTEGER)
+      (totalUsd !== null && new Decimal(totalUsd).mul(100).gt(Number.MAX_SAFE_INTEGER))
     )
       fail(422, 'ORDER_TOO_LARGE', 'El importe supera el límite permitido.');
     const version = await hash({
@@ -83,13 +91,16 @@ export class OrderService {
       currency: input.currency,
       rate,
       rateId,
+      copRateId,
       items,
     });
     return {
       clientId: client.id,
       currency: input.currency,
       rate,
+      rateBase: 'COP',
       rateId,
+      copRateId,
       items,
       total,
       totalUsd,

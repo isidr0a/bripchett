@@ -144,7 +144,7 @@ export class D1ManagementRepository extends D1Repository implements ManagementRe
         .bind(...args),
       this.db
         .prepare(
-          "SELECT coalesce(sum(total_usd_minor),0) total FROM orders WHERE status<>'anulado' AND " +
+          "SELECT coalesce(sum(total_usd_minor),0) total, sum(CASE WHEN usd_available=0 THEN 1 ELSE 0 END) missing FROM orders WHERE status<>'anulado' AND " +
             orderWhere,
         )
         .bind(...args),
@@ -158,7 +158,9 @@ export class D1ManagementRepository extends D1Repository implements ManagementRe
       ),
       states: states.results as { status: Order['status']; total: number }[],
       visits: visits.results as { status: Visit['status']; total: number }[],
-      totalUsd: major(count(usd)),
+      totalUsd: Number((usd.results[0] as { missing: number | null }).missing)
+        ? null
+        : major(count(usd)),
       generatedAt: now(),
     };
   }

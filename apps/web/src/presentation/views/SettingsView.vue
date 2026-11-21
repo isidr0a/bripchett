@@ -14,7 +14,7 @@ const { rates, currency, rate, busy, error, success, integration, save, load } =
   <section class="card stack">
     <h2>Tasas de cambio</h2>
     <p class="muted">
-      Precios base en USD. Registra cuántos pesos colombianos o bolívares equivalen a un dólar.
+      Precios base en COP. Registra cuántos pesos colombianos o bolívares equivalen a un dólar.
     </p>
     <div class="metrics rates">
       <article class="inset card">

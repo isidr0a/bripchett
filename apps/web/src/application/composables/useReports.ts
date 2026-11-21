@@ -44,7 +44,7 @@ export function useReports() {
       ['Reporte Briochett', data.value.from, data.value.to],
       ['Moneda', 'Pedidos', 'Total'],
       ...data.value.totals.map((r) => [r.currency, r.orders, r.total]),
-      ['Base USD', '', data.value.totalUsd],
+      ['Base USD', '', data.value.totalUsd ?? 'No disponible'],
       [],
       ['Estado de pedido', 'Cantidad'],
       ...data.value.states.map((s) => [statusLabels[s.status], s.total]),

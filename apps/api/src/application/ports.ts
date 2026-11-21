@@ -210,7 +210,7 @@ export type CatalogImportRecord = {
   rif: string;
   phone: string;
   address: string;
-  priceUsd: string;
+  priceCop: string;
   updatedAt: string;
   deletedAt: string | null;
 };
@@ -225,7 +225,7 @@ export type CatalogImportChange = {
   phone?: string;
   address?: string;
   active?: boolean;
-  priceUsd?: string;
+  priceCop?: string;
   zoneId?: string;
   zoneName?: string;
 };
@@ -245,7 +245,7 @@ export interface CatalogImportRepository {
     kind: CatalogImportKind;
     changes: CatalogImportChange[];
     zoneId?: string;
-    rateId?: string;
+    rateIds?: { currency: 'COP' | 'VES'; id: string }[];
     currency?: 'USD' | 'COP' | 'VES';
     at: string;
     date: string;

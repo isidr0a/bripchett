@@ -24,8 +24,8 @@ export class D1CatalogImportRepository extends D1Repository implements CatalogIm
         : `p.sku COLLATE NOCASE IN (SELECT r->>'code' FROM wanted)`;
     const projection =
       kind === 'clients'
-        ? "c.id,c.code,c.import_code importCode,c.name,c.rif,c.phone,c.address,'' priceUsd,c.updated_at updatedAt,c.deleted_at deletedAt FROM clients c"
-        : "p.id,p.sku code,NULL importCode,p.name,'' rif,'' phone,'' address,p.price_usd priceUsd,p.updated_at updatedAt,p.deleted_at deletedAt FROM products p";
+        ? "c.id,c.code,c.import_code importCode,c.name,c.rif,c.phone,c.address,'' priceCop,c.updated_at updatedAt,c.deleted_at deletedAt FROM clients c"
+        : "p.id,p.sku code,NULL importCode,p.name,'' rif,'' phone,'' address,p.price_cop priceCop,p.updated_at updatedAt,p.deleted_at deletedAt FROM products p";
     const result = await this.db
       .prepare(
         `WITH wanted AS (SELECT value r FROM json_each(?))
@@ -54,7 +54,7 @@ export class D1CatalogImportRepository extends D1Repository implements CatalogIm
     kind,
     changes,
     zoneId,
-    rateId,
+    rateIds = [],
     currency,
     at,
     date,
@@ -90,7 +90,7 @@ export class D1CatalogImportRepository extends D1Repository implements CatalogIm
       )`
           : ''
       }
-      ${rateId ? `AND (${latestRate.replace('SELECT id,rate', 'SELECT id')})=?` : ''}`,
+      ${rateIds.map(() => `AND (${latestRate.replace('SELECT id,rate', 'SELECT id')})=?`).join(' ')}`,
       )
       .bind(
         json,
@@ -111,7 +111,7 @@ export class D1CatalogImportRepository extends D1Repository implements CatalogIm
             : {}),
         }),
         at,
-        ...(rateId ? [currency!, rateId] : []),
+        ...rateIds.flatMap((rate) => [rate.currency, rate.id]),
       );
 
     const guarded = 'EXISTS (SELECT 1 FROM audit_log WHERE id=?)';
@@ -127,7 +127,7 @@ export class D1CatalogImportRepository extends D1Repository implements CatalogIm
       : this.db
           .prepare(
             `${wanted}
-          UPDATE products SET name=w.r->>'name',price_usd=w.r->>'priceUsd',updated_at=?
+          UPDATE products SET name=w.r->>'name',price_cop=w.r->>'priceCop',updated_at=?
           FROM wanted w WHERE products.id=w.r->>'previousId' AND ${guarded}`,
           )
           .bind(json, at, batchId);
@@ -144,8 +144,8 @@ export class D1CatalogImportRepository extends D1Repository implements CatalogIm
       : this.db
           .prepare(
             `${wanted}
-          INSERT INTO products(id,sku,name,price_usd,active,created_at,updated_at)
-          SELECT r->>'id',r->>'code',r->>'name',r->>'priceUsd',1,?,?
+          INSERT INTO products(id,sku,name,price_usd,price_cop,active,created_at,updated_at)
+          SELECT r->>'id',r->>'code',r->>'name','0',r->>'priceCop',1,?,?
           FROM wanted WHERE r->>'previousId' IS NULL AND ${guarded}`,
           )
           .bind(json, at, at, batchId);

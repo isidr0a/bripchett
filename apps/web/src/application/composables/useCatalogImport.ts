@@ -13,7 +13,7 @@ const pageSize = 12;
 export function useCatalogImport() {
   const workbook = ref<CatalogWorkbook>();
   const fileName = ref('');
-  const currency = ref<Currency | ''>('');
+  const currency = ref<Currency>('COP');
   const zoneId = ref('');
   const zoneName = ref('');
   const createClients = ref(true);
@@ -79,7 +79,7 @@ export function useCatalogImport() {
     summary.value = undefined;
     error.value = '';
     excluded.value = new Set();
-    currency.value = '';
+    currency.value = 'COP';
     zoneId.value = '';
     zoneName.value = '';
     createClients.value = true;

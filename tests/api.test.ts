@@ -204,9 +204,14 @@ beforeAll(async () => {
     '0008_record_photos.sql',
     '0009_catalog_import.sql',
     '0010_import_zone_classification.sql',
+    '0011_prices_cop.sql',
   ]) {
     if (file === '0006_commercial_zones.sql') await oldZoneFixtures();
     if (file === '0007_production_report.sql') await legacyProductionFixtures();
+    if (file === '0011_prices_cop.sql')
+      await db.exec(
+        "INSERT INTO exchange_rates(id,currency,rate,created_at,created_by) VALUES('migration-rate','COP','4000','2026-01-01','legacy-seller')",
+      );
     const sql = await readFile(new URL('../apps/api/migrations/' + file, import.meta.url), 'utf8');
     const lines = sql.split('\n'),
       statements: string[] = [];
@@ -225,6 +230,13 @@ beforeAll(async () => {
     }
     if (pending) throw new Error('Incomplete migration');
     for (const statement of statements) await db.exec(statement);
+    if (file === '0011_prices_cop.sql') {
+      expect(
+        (await db.prepare("SELECT price_cop FROM products WHERE id='legacy-pan'").first())
+          ?.price_cop,
+      ).toBe('4000.00');
+      await db.exec("DELETE FROM exchange_rates WHERE id='migration-rate'");
+    }
   }
   for (const [role, name] of [
     ['administracion', 'Administrador'],
@@ -264,7 +276,7 @@ beforeAll(async () => {
     await request('/api/v1/products', 'administracion', 'POST', {
       sku: 'BRI',
       name: 'Pan Brioche',
-      priceUsd: '0.55',
+      priceCop: '2310.07',
       active: true,
     })
   ).body;
@@ -295,7 +307,7 @@ describe('Autenticación y permisos', () => {
           '/api/v1/products',
           'administracion',
           'POST',
-          { sku: 'BAD', name: 'Producto', priceUsd: '1', active: true },
+          { sku: 'BAD', name: 'Producto', priceCop: '1', active: true },
           { Origin: 'https://otro.invalid' },
         )
       ).status,
@@ -311,7 +323,7 @@ describe('Autenticación y permisos', () => {
         await request('/api/v1/products', 'supervision', 'POST', {
           sku: 'x',
           name: 'Producto',
-          priceUsd: '1',
+          priceCop: '1',
         })
       ).status,
     ).toBe(403);
@@ -387,7 +399,7 @@ describe('Clientes y GPS', () => {
   it('bloquea pedidos con datos incompletos y permite guardar la ficha', async () => {
     const q = await request('/api/v1/orders/quote', 'vendedor', 'POST', {
       clientId: incomplete.id,
-      currency: 'USD',
+      currency: 'COP',
       items: [{ productId: product.id, quantity: 2 }],
     });
     expect(q.body.error.code).toBe('CLIENT_INCOMPLETE');
@@ -404,7 +416,7 @@ describe('Clientes y GPS', () => {
       (
         await request('/api/v1/orders/quote', 'vendedor', 'POST', {
           clientId: incomplete.id,
-          currency: 'USD',
+          currency: 'COP',
           items: [{ productId: product.id, quantity: 2 }],
         })
       ).status,
@@ -419,13 +431,48 @@ describe('Precios, pedidos y preparación', () => {
   });
   let saved: any, key: string;
   it('usa redondeo decimal por precio unitario', () => {
-    const line = calculateLine({ id: 'p', name: 'p', sku: 'p', priceUsd: '0.10' }, 3, '1.05');
+    const line = calculateLine({ id: 'p', name: 'p', sku: 'p', priceCop: '0.10' }, 3, '1.05');
     expect(line.unitPrice).toBe('0.11');
     expect(line.subtotal).toBe('0.33');
   });
   it('requiere tasa para monedas convertidas', async () => {
+    const copQuote = await request('/api/v1/orders/quote', 'vendedor', 'POST', input());
+    expect(copQuote.status).toBe(200);
+    expect(copQuote.body.total).toBe('6930.21');
+    expect(copQuote.body.totalUsd).toBeNull();
+    const createdWithoutRate = await request(
+      '/api/v1/orders',
+      'vendedor',
+      'POST',
+      { ...input(), quoteVersion: copQuote.body.version, notes: '' },
+      { 'Idempotency-Key': randomUUID() },
+    );
+    expect(createdWithoutRate.status, JSON.stringify(createdWithoutRate.body)).toBe(201);
+    expect(createdWithoutRate.body.totalUsd).toBeNull();
+    const detailWithoutRate = await request(
+      '/api/v1/orders/' + createdWithoutRate.body.id,
+      'vendedor',
+    );
+    expect(detailWithoutRate.body.items[0].priceUsd).toBeNull();
+    expect(detailWithoutRate.body.items[0].priceCop).toBe('2310.07');
+    const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas' }).format(
+      new Date(),
+    );
+    const reportWithoutRate = await request('/api/v1/reports?from=' + day + '&to=' + day);
+    expect(reportWithoutRate.body.totalUsd).toBeNull();
     expect(
-      (await request('/api/v1/orders/quote', 'vendedor', 'POST', input())).body.error.code,
+      (
+        await request(
+          '/api/v1/orders/' + createdWithoutRate.body.id + '/cancel',
+          'administracion',
+          'POST',
+        )
+      ).status,
+    ).toBe(200);
+
+    expect(
+      (await request('/api/v1/orders/quote', 'vendedor', 'POST', { ...input(), currency: 'USD' }))
+        .body.error.code,
     ).toBe('RATE_MISSING');
     for (const [currency, rate] of [
       ['COP', '4200.123456'],
@@ -508,12 +555,12 @@ describe('Precios, pedidos y preparación', () => {
     await request('/api/v1/products/' + product.id, 'administracion', 'PATCH', {
       sku: 'BRI',
       name: 'Pan Brioche',
-      priceUsd: '0.60',
+      priceCop: '2580.00',
       active: true,
     });
     const history = await request('/api/v1/orders/' + saved.id, 'vendedor');
     expect(history.body.total).toBe('6930.21');
-    expect(history.body.items[0].priceUsd).toBe('0.55');
+    expect(history.body.items[0].priceCop).toBe('2310.07');
     expect(
       (
         await request(
@@ -1182,7 +1229,7 @@ describe('Papelera y borrado lógico', () => {
       await post('products', {
         name: 'Pan de prueba papelera',
         sku: 'PAPELERA',
-        priceUsd: '2.00',
+        priceCop: '8600.00',
         active: true,
       })
     ).body;
@@ -1195,7 +1242,7 @@ describe('Papelera y borrado lógico', () => {
       notes: '',
     };
     const quote = (await post('orders/quote', payload)).body;
-    expect(quote.rate).toBe('125');
+    expect(Number(quote.rate)).toBeCloseTo(125 / 4300);
     const created = await request(
       '/api/v1/orders',
       'administracion',
@@ -1205,7 +1252,7 @@ describe('Papelera y borrado lógico', () => {
     );
     expect(created.status).toBe(201);
     expect((await drop('rates', latest.id)).status).toBe(200);
-    expect((await post('orders/quote', payload)).body.rate).toBe('100');
+    expect(Number((await post('orders/quote', payload)).body.rate)).toBeCloseTo(100 / 4300);
     expect((await drop('rates', first.id)).status).toBe(200);
     const remaining = (await request('/api/v1/rates')).body.items.filter(
       (r: any) => r.currency === 'VES',
@@ -1216,7 +1263,7 @@ describe('Papelera y borrado lógico', () => {
     expect((await drop('products', item.id)).status).toBe(200);
     expect((await post('orders/quote', payload)).body.error.code).toBe('PRODUCT_UNAVAILABLE');
     const history = (await request('/api/v1/orders/' + created.body.id)).body;
-    expect(history.rate).toBe('125');
+    expect(Number(history.rate)).toBeCloseTo(125 / 4300);
     expect(history.total).toBe('250.00');
     expect(history.items[0].name).toBe(item.name);
     expect((await restore('products', item.id)).status).toBe(200);
@@ -1690,7 +1737,7 @@ describe('Totales de producción', () => {
       await request('/api/v1/products', 'administracion', 'POST', {
         sku: 'PROD-02',
         name: 'Pan de producción',
-        priceUsd: '0.50',
+        priceCop: '2150.00',
       })
     ).body;
     const series = await request('/api/v1/routes', 'administracion', 'POST', {
@@ -1894,7 +1941,7 @@ describe('Totales de producción', () => {
           .bind(id, id, at, at),
         db
           .prepare(
-            "INSERT INTO order_items(id,order_id,product_id,name,sku,quantity,price_usd,unit_minor,subtotal_minor) VALUES(?,?,'legacy-pan','Pan histórico','LEGACY-PAN',1,'1.00',100,100)",
+            "INSERT INTO order_items(id,order_id,product_id,name,sku,quantity,price_usd,price_cop,unit_minor,subtotal_minor) VALUES(?,?,'legacy-pan','Pan histórico','LEGACY-PAN',1,'1.00','4000.00',100,100)",
           )
           .bind(id, id),
       ]);
@@ -2070,7 +2117,7 @@ describe('Fotos privadas', () => {
     const created = await request('/api/v1/products', 'administracion', 'POST', {
       name: 'Producto con foto',
       sku: 'FOTO-RESTAURAR',
-      priceUsd: '1.23',
+      priceCop: '5289.00',
     });
     const parent = '/api/v1/products/' + created.body.id;
     const path = parent + '/photo';
@@ -2165,7 +2212,7 @@ describe('Importación de catálogos', () => {
     expect((await request(path, 'vendedor', 'POST', input)).status).toBe(403);
     const preview = await request(path, 'administracion', 'POST', input);
     expect(preview.body.summary).toEqual({ creates: 1, updates: 0, skipped: 0, unchanged: 0 });
-    expect(preview.body.decisions[0].note).toBe('USD 1.75');
+    expect(preview.body.decisions[0].note).toBe('COP 7000.00');
     expect(await db.prepare("SELECT id FROM products WHERE sku='IMP-PAN'").first()).toBeNull();
     const result = await request(path, 'administracion', 'POST', {
       ...input,
@@ -2173,9 +2220,9 @@ describe('Importación de catálogos', () => {
     });
     expect(result.status, JSON.stringify(result.body)).toBe(200);
     const product = await db
-      .prepare("SELECT id,price_usd FROM products WHERE sku='IMP-PAN'")
+      .prepare("SELECT id,price_cop FROM products WHERE sku='IMP-PAN'")
       .first();
-    expect(product?.price_usd).toBe('1.75');
+    expect(product?.price_cop).toBe('7000.00');
     const updatedInput = { ...input, rows: [{ ...input.rows[0], price: '7200' }] };
     const updated = await request(path, 'administracion', 'POST', updatedInput);
     expect(updated.body.summary.updates).toBe(1);
@@ -2188,8 +2235,48 @@ describe('Importación de catálogos', () => {
       ).status,
     ).toBe(200);
     expect(
-      await db.prepare("SELECT id,price_usd FROM products WHERE sku='IMP-PAN'").first(),
-    ).toEqual({ id: product?.id, price_usd: '1.80' });
+      await db.prepare("SELECT id,price_cop FROM products WHERE sku='IMP-PAN'").first(),
+    ).toEqual({ id: product?.id, price_cop: '7200.00' });
+  });
+
+  it('convierte importaciones en USD y VES a COP y rechaza tasas cambiadas', async () => {
+    await request('/api/v1/rates', 'administracion', 'POST', { currency: 'COP', rate: '4000' });
+    await request('/api/v1/rates', 'administracion', 'POST', { currency: 'VES', rate: '100' });
+    for (const [currency, price, code] of [
+      ['USD', '2', 'IMP-USD'],
+      ['VES', '200', 'IMP-VES'],
+    ]) {
+      const input = {
+        kind: 'prices',
+        currency,
+        rows: [{ line: 1, code, name: 'Pan convertido', price }],
+      };
+      const preview = await request(path, 'administracion', 'POST', input);
+      expect(preview.body.decisions[0].note).toBe('COP 8000.00');
+      expect(
+        (
+          await request(path, 'administracion', 'POST', {
+            ...input,
+            revision: preview.body.revision,
+          })
+        ).status,
+      ).toBe(200);
+      expect(
+        (await db.prepare('SELECT price_cop FROM products WHERE sku=?').bind(code).first())
+          ?.price_cop,
+      ).toBe('8000.00');
+    }
+    const input = {
+      kind: 'prices',
+      currency: 'VES',
+      rows: [{ line: 1, code: 'IMP-STALE', name: 'Pan', price: '2' }],
+    };
+    const preview = await request(path, 'administracion', 'POST', input);
+    await request('/api/v1/rates', 'administracion', 'POST', { currency: 'VES', rate: '105' });
+    expect(
+      (await request(path, 'administracion', 'POST', { ...input, revision: preview.body.revision }))
+        .status,
+    ).toBe(409);
   });
 
   it('vincula por RIF, conserva la ficha operativa y crea clientes solo con zona confirmada', async () => {
@@ -2469,7 +2556,7 @@ describe('Importación de catálogos', () => {
     await request('/api/v1/products', 'administracion', 'POST', {
       sku: 'XL-STALE',
       name: 'Alta manual',
-      priceUsd: '3.00',
+      priceCop: '12900.00',
     });
     const applied = await request(path, 'administracion', 'POST', {
       ...input,
